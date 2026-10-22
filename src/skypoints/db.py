@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import duckdb
 
 DEFAULT_DDL_DIR = Path(__file__).resolve().parents[2] / "sql" / "duckdb"
+_NUMBERED_SQL = re.compile(r"\d{2}_.*\.sql")  # 00_setup.sql, 01_raw.sql, ...
 
 
 def ddl_files(ddl_dir: Path) -> list[Path]:
-    """Return the .sql files in `ddl_dir`, sorted by name (00_..., 01_..., ...)."""
+    """Return the numbered DDL files in `ddl_dir` (00_..., 01_..., ...), sorted by name.
+
+    Other .sql files, such as load_staging.sql, need bound parameters and are not DDL.
+    """
     if not ddl_dir.is_dir():
         raise FileNotFoundError(f"DDL directory not found: {ddl_dir}")
-    return sorted(ddl_dir.glob("*.sql"))
+    return sorted(p for p in ddl_dir.glob("*.sql") if _NUMBERED_SQL.fullmatch(p.name))
 
 
 def create_database(
