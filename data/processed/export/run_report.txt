@@ -2,12 +2,12 @@ SkyPoints pipeline run report
 as of 2024-01-15  |  database D:\Databricks-Training\New-test\Incubyte\data\processed\skypoints.duckdb
 
 == Files ==
-  AUS.xlsx  [country extract]  already loaded
-  IND.csv  [country extract]  already loaded
+  AUS.xlsx  [country extract]  loaded
+  IND.csv  [country extract]  loaded
   README.md  [unknown]  skipped  - no matching feed rule
-  SKYPOINTS_MEMBERS_20240115_00000000.dat  [members]  already loaded
-  USA.csv  [country extract]  already loaded
-  redemptions.json  [redemptions]  already loaded
+  SKYPOINTS_MEMBERS_20240115_00000000.dat  [members]  loaded
+  USA.csv  [country extract]  loaded
+  redemptions.json  [redemptions]  loaded
 
 == Rows per layer ==
   RAW member rows: 14

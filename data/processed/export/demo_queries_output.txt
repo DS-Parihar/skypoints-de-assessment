@@ -1,0 +1,101 @@
+Q1. Rows per layer: nothing is lost between raw and the tables people use.
+layer                              n
+---------------------------------  --
+RAW member rows                    14
+STAGING members                    12
+Quarantined member rows            2
+CORE members (one per member_key)  12
+RAW redemption members             1
+STAGING redemptions                2
+CORE redemption transactions       2
+(7 rows)
+
+Q2. Members per country table (a member is in exactly one). Add a UNION for any new country.
+country_table       n
+------------------  -
+MEMBERS_AUS         3
+MEMBERS_CAN         1
+MEMBERS_IND         4
+MEMBERS_PHL         1
+MEMBERS_USA         3
+MEMBERS_UNASSIGNED  0
+(6 rows)
+
+Q3. Raw equals staged plus quarantined: the difference must be 0.
+unexplained_member_rows
+-----------------------
+0
+(1 row)
+
+Q4. Latest record wins: every version of Ravi in staging, and the one that is current.
+layer           FILE_NAME                                FILE_TS              COUNTRY_CODE
+--------------  ---------------------------------------  -------------------  ------------
+CORE (current)  SKYPOINTS_MEMBERS_20240115_00000000.dat  2024-01-15 00:00:00  IND
+staging         SKYPOINTS_MEMBERS_20240115_00000000.dat  2024-01-15 00:00:00  IND
+(2 rows)
+
+Q5. A member who moved country: the history, and where he is now.
+MEMBER_KEY  OLD_COUNTRY_CODE  NEW_COUNTRY_CODE  EFFECTIVE_FILE_TS
+----------  ----------------  ----------------  -----------------
+(0 rows)
+
+Q6. ...and he is only in the new country table.
+country_table  rows_for_ravi
+-------------  -------------
+MEMBERS_IND    1
+MEMBERS_USA    0
+(2 rows)
+
+Q7. Age and stale flag, computed from the explicit as-of date (never today's date).
+MEMBER_NAME  DATE_OF_BIRTH  AS_OF_DATE  AGE   LAST_FLIGHT_DATE  STALE_MEMBER  COUNTRY_CODE
+-----------  -------------  ----------  ----  ----------------  ------------  ------------
+Cristina     1998-03-12     2024-01-15  25    2022-03-20        true          AUS
+Elena        1985-03-05     2024-01-15  38    2012-10-13        true          USA
+Jacob        1985-03-05     2024-01-15  38    2012-10-13        true          AUS
+Mateo        1985-03-05     2024-01-15  38    2012-10-13        true          PHL
+Mike         NULL           2024-01-15  NULL  2022-08-01        true          AUS
+Mike         NULL           2024-01-15  NULL  2021-12-30        true          USA
+Nora         1985-03-05     2024-01-15  38    2012-10-13        true          CAN
+Rahul        1982-08-13     2024-01-15  41    2022-03-10        true          IND
+Ravi         1985-03-05     2024-01-15  38    2012-10-13        true          IND
+Sam          NULL           2024-01-15  NULL  2022-08-20        true          USA
+Sameer       1952-08-13     2024-01-15  71    2022-02-25        true          IND
+Vikas        1998-12-01     2024-01-15  25    2022-06-15        true          IND
+(12 rows)
+
+Q8. Data quality: how many rows each rule caught, by severity.
+RULE_CODE  SEVERITY  findings
+---------  --------  --------
+DQ013      WARN      9
+DQ014      WARN      1
+DQ017      WARN      2
+(3 rows)
+
+Q9. Quarantined rows with the reason code and the original values.
+SOURCE_TABLE         FILE_NAME  FILE_ROW_NUMBER  RULE_CODE  REASON_CODE  REASON_DETAIL                        RAW_PAYLOAD
+-------------------  ---------  ---------------  ---------  -----------  -----------------------------------  ----------------------------------------------------------------------
+RAW.MEMBER_FEED_RAW  AUS.xlsx   3                DQ003      DQ003        enrollment_date is not a valid date  {"RECORD_TYPE":"D","MEMBER_NAME":"Jonnathan","MEMBER_ID":"2","ENROLLM…
+RAW.MEMBER_FEED_RAW  USA.csv    3                DQ003      DQ003        enrollment_date is ambiguous         {"RECORD_TYPE":"D","MEMBER_NAME":"John","MEMBER_ID":"2","ENROLLMENT_D…
+(2 rows)
+
+Q10. Raw keeps text: the leading zero of a date of birth survives; staging has the typed date.
+MEMBER_NAME  raw_dob_text  staged_dob  raw_post_code
+-----------  ------------  ----------  -------------
+Cristina     1998-03-12    1998-03-12
+Elena        03051985      1985-03-05
+Jacob        03051985      1985-03-05
+Mateo        03051985      1985-03-05
+Mike         NULL          NULL
+(5 rows)
+
+Q11. Redemptions per member: completed and pending miles, last date, current country.
+MEMBER_KEY        MEMBER_MATCHED  MEMBER_NAME  CURRENT_COUNTRY_CODE  TOTAL_COMPLETED_MILES  PENDING_MILES  TXN_COUNT  LAST_REDEMPTION_DATE
+----------------  --------------  -----------  --------------------  ---------------------  -------------  ---------  --------------------
+SKYPOINTS:223457  true            Elena        USA                   12000                  5000           2          2024-01-13
+(1 row)
+
+Q12. Orphans: redemptions whose member is not in the member feed.
+MEMBER_KEY  TOTAL_COMPLETED_MILES  PENDING_MILES  TXN_COUNT
+----------  ---------------------  -------------  ---------
+(0 rows)
+
