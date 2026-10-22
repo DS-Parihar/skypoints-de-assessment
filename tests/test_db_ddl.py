@@ -30,11 +30,13 @@ DQ_FLAGS = [
     "dq_member_id_short",
     "dq_active_flag_unknown",
 ]
+KEYS = ["source_system", "member_key"]  # member_key = source_system || ':' || member_id
 DERIVED = ["country_code", "as_of_date", "age", "stale_member"]
 LINEAGE = ["file_name", "file_row_number", "file_ts", "batch_id"]
 
 MEMBER_CURRENT_COLUMNS = [
     *MEMBER_BUSINESS_COLUMNS,
+    *KEYS,
     *DERIVED,
     *DQ_FLAGS,
     *LINEAGE,
@@ -46,19 +48,31 @@ EXPECTED_COLUMNS: dict[tuple[str, str], list[str]] = {
     ("raw", "member_feed_raw"): [
         "record_type",
         *MEMBER_BUSINESS_COLUMNS,
+        *KEYS,
         *LINEAGE,
         "loaded_at",
     ],
     ("raw", "redemption_feed_raw"): ["payload", *LINEAGE, "loaded_at"],
     ("staging", "member_stg"): [
         *MEMBER_BUSINESS_COLUMNS,
+        *KEYS,
         *DERIVED,
         *DQ_FLAGS,
         *LINEAGE,
         "staged_at",
     ],
     ("core", "member_current"): MEMBER_CURRENT_COLUMNS,
+    ("staging", "member_prepared_v"): [
+        *MEMBER_BUSINESS_COLUMNS,
+        *KEYS,
+        "country_code",
+        *DQ_FLAGS,
+        "reject_reason",
+        *LINEAGE,
+        "raw_payload",
+    ],
     ("core", "member_country_history"): [
+        "member_key",
         "member_id",
         "old_country_code",
         "new_country_code",
@@ -124,7 +138,13 @@ def test_default_ddl_dir_is_sql_duckdb() -> None:
 def test_ddl_files_are_returned_in_numeric_order() -> None:
     names = [p.name for p in ddl_files(DEFAULT_DDL_DIR)]
 
-    assert names == ["00_setup.sql", "01_raw.sql", "02_staging.sql", "03_targets.sql"]
+    assert names == [
+        "00_setup.sql",
+        "01_raw.sql",
+        "02_staging.sql",
+        "03_targets.sql",
+        "04_member_prepared.sql",
+    ]
 
 
 def test_ddl_files_rejects_a_missing_directory(tmp_path: Path) -> None:
@@ -212,4 +232,49 @@ def test_custom_ddl_dir_is_used(tmp_path: Path) -> None:
 
     tables = {r[0] for r in connection.execute("SHOW TABLES").fetchall()}
     assert tables == {"t_a", "t_b"}
+    connection.close()
+
+
+@pytest.mark.parametrize(
+    ("schema", "table"),
+    [
+        ("raw", "member_feed_raw"),
+        ("staging", "member_stg"),
+        ("core", "member_current"),
+        ("mart", "members_usa"),
+        ("mart", "members_unassigned"),
+    ],
+)
+def test_source_system_and_member_key_exist_and_are_text(
+    con: duckdb.DuckDBPyConnection, schema: str, table: str
+) -> None:
+    types = _types(con, schema, table)
+
+    assert types["source_system"] == "VARCHAR"
+    assert types["member_key"] == "VARCHAR"
+
+
+def test_member_key_is_the_primary_key_of_member_current(con: duckdb.DuckDBPyConnection) -> None:
+    rows = con.execute(
+        "SELECT constraint_column_names FROM duckdb_constraints() "
+        "WHERE lower(table_name) = 'member_current' AND constraint_type = 'PRIMARY KEY'"
+    ).fetchall()
+
+    assert [list(r[0]) for r in rows] == [["MEMBER_KEY"]]
+
+
+def test_member_id_alone_is_not_unique_in_member_current() -> None:
+    connection = create_database()
+    row = (
+        "INSERT INTO core.member_current (member_name, member_id, enrollment_date, source_system, "
+        "member_key, as_of_date, stale_member, file_name, file_row_number, file_ts, batch_id) "
+        "VALUES ('A', '1', DATE '2022-01-01', '{sys}', '{sys}:1', DATE '2024-01-15', TRUE, "
+        "'f', 1, TIMESTAMP '2024-01-15 00:00:00', 'b')"
+    )
+    connection.execute(row.format(sys="IND"))
+    connection.execute(row.format(sys="USA"))  # same member_id 1, different source: allowed
+
+    assert connection.execute("SELECT count(*) FROM core.member_current").fetchone() == (2,)
+    with pytest.raises(duckdb.ConstraintException):
+        connection.execute(row.format(sys="USA"))  # same member_key twice: rejected
     connection.close()
