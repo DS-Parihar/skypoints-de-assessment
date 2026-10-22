@@ -28,8 +28,13 @@ FINDING_SELECT = (
     "column_name, value FROM {view}"
 )
 _WORK_TABLES = (
-    "rule_param", "rule_input", "rule_header", "rule_counts", "rule_column_counts",
-    "work_finding", "work_date",
+    "rule_param",
+    "rule_input",
+    "rule_header",
+    "rule_counts",
+    "rule_column_counts",
+    "work_finding",
+    "work_date",
 )
 _scratch_connection: duckdb.DuckDBPyConnection | None = None
 
@@ -75,14 +80,14 @@ def load_config(
         con.execute(f"DELETE FROM dq.{table}")
     _many(con, "INSERT INTO dq.cfg_tier VALUES (?)", [(t,) for t in config.tiers])
     _many(con, "INSERT INTO dq.cfg_active VALUES (?)", [(v,) for v in config.active_values])
-    _many(con, 
+    _many(
+        con,
         "INSERT INTO dq.cfg_country_map VALUES (?, ?)",
         [(alias.upper(), iso3) for alias, iso3 in config.country_map.items()],
     )
-    _many(con, 
-        "INSERT INTO dq.cfg_max_length VALUES (?, ?)", list(config.max_lengths.items())
-    )
-    _many(con, 
+    _many(con, "INSERT INTO dq.cfg_max_length VALUES (?, ?)", list(config.max_lengths.items()))
+    _many(
+        con,
         "INSERT INTO dq.cfg_date_format VALUES (?, ?, ?)",
         [
             (source, column, fmt)
@@ -118,9 +123,14 @@ def load_rows(con: duckdb.DuckDBPyConnection, rows: Sequence[PreparedRow]) -> No
 def load_headers(
     con: duckdb.DuckDBPyConnection, headers: Mapping[str, Sequence[str]], batch_id: str | None
 ) -> None:
-    _many(con, 
+    _many(
+        con,
         "INSERT INTO dq.rule_header VALUES (?, ?, ?)",
-        [(batch_id, file_name, column) for file_name, columns in headers.items() for column in columns],
+        [
+            (batch_id, file_name, column)
+            for file_name, columns in headers.items()
+            for column in columns
+        ],
     )
 
 
@@ -130,7 +140,8 @@ def load_counts(con: duckdb.DuckDBPyConnection, counts: BatchCounts, batch_id: s
         [batch_id, counts.raw_rows, counts.staged_rows, counts.rejected_rows],
     )
     columns = set(counts.raw_nonblank) | set(counts.staged_nonblank)
-    _many(con, 
+    _many(
+        con,
         "INSERT INTO dq.rule_column_counts VALUES (?, ?, ?, ?)",
         [
             (batch_id, c, counts.raw_nonblank.get(c, 0), counts.staged_nonblank.get(c, 0))

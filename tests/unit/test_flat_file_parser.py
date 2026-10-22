@@ -8,9 +8,9 @@ Columns are mapped by header NAME, never by position, so column order does not m
 `warnings` is a list of FeedWarning(code, column, message) objects, not strings.
 """
 
+import shutil
 from datetime import datetime
 from pathlib import Path
-import shutil
 
 import pytest
 
@@ -249,9 +249,7 @@ def test_each_missing_optional_column_gets_its_own_warning(tmp_path: Path) -> No
     assert records[0]["active_member"] == ""
 
 
-@pytest.mark.parametrize(
-    "mandatory", ["Member_Name", "Member_Id", "Enrollment_Date"]
-)
+@pytest.mark.parametrize("mandatory", ["Member_Name", "Member_Id", "Enrollment_Date"])
 def test_missing_mandatory_column_raises_and_names_it(tmp_path: Path, mandatory: str) -> None:
     path = _write(tmp_path, _drop_column(_rows(VALID_FILE), mandatory))
 

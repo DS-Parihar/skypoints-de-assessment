@@ -72,7 +72,9 @@ def test_member_ids_are_plain_digit_strings(reader, path, system) -> None:
 
 
 def test_member_keys_do_not_collide_across_countries() -> None:
-    keys = [r["member_key"] for reader, path, _ in (p.values for p in ADAPTERS) for r in reader(path)]
+    keys = [
+        r["member_key"] for reader, path, _ in (p.values for p in ADAPTERS) for r in reader(path)
+    ]
 
     assert len(keys) == 9
     assert len(set(keys)) == 9

@@ -107,9 +107,7 @@ def test_a_blank_row_and_a_null_row_end_up_identical_in_staging(
     _run(con)
 
     columns = ", ".join(OPTIONAL_TEXT_COLUMNS)
-    rows = con.execute(
-        f"SELECT {columns} FROM staging.member_stg ORDER BY member_id"
-    ).fetchall()
+    rows = con.execute(f"SELECT {columns} FROM staging.member_stg ORDER BY member_id").fetchall()
     assert rows == [(None,) * len(OPTIONAL_TEXT_COLUMNS)] * 2
 
 

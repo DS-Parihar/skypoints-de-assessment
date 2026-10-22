@@ -144,7 +144,9 @@ def test_candidates_for_ok_null_and_invalid_results() -> None:
         pytest.param(date(1985, 3, 5), date(2024, 3, 5), 39, id="birthday-today-counts"),
         pytest.param(date(1985, 3, 5), date(2024, 12, 31), 39, id="after-birthday-same-year"),
         pytest.param(date(1985, 12, 31), date(2024, 1, 1), 38, id="not-the-datediff-year-boundary"),
-        pytest.param(date(2000, 2, 29), date(2023, 2, 28), 22, id="leapling-non-leap-before-1-march"),
+        pytest.param(
+            date(2000, 2, 29), date(2023, 2, 28), 22, id="leapling-non-leap-before-1-march"
+        ),
         pytest.param(date(2000, 2, 29), date(2023, 3, 1), 23, id="leapling-non-leap-on-1-march"),
         pytest.param(date(2000, 2, 29), date(2024, 2, 29), 24, id="leapling-on-leap-day"),
         pytest.param(date(2024, 1, 15), date(2024, 1, 15), 0, id="born-on-as-of"),
@@ -185,7 +187,9 @@ AS_OF = date(2024, 1, 15)
         pytest.param(date(2024, 1, 16), None, id="future-flight-date-is-bad-data"),
     ],
 )
-def test_is_stale_with_the_default_threshold(last_flight: date | None, expected: bool | None) -> None:
+def test_is_stale_with_the_default_threshold(
+    last_flight: date | None, expected: bool | None
+) -> None:
     assert is_stale(last_flight, AS_OF) is expected
 
 

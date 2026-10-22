@@ -21,7 +21,15 @@ ROW_COLUMNS = {
     "member_id", "feed_date", "txn_id", "txn_date", "partner", "miles_redeemed", "status",
     "file_name", "file_row_number", "txn_seq", "file_ts",
 }  # fmt: skip
-TEXT_COLUMNS = ["member_id", "feed_date", "txn_id", "txn_date", "partner", "miles_redeemed", "status"]
+TEXT_COLUMNS = [
+    "member_id",
+    "feed_date",
+    "txn_id",
+    "txn_date",
+    "partner",
+    "miles_redeemed",
+    "status",
+]
 
 
 def feed(scenario: str) -> Path:
@@ -101,7 +109,9 @@ def test_file_ts_comes_from_the_file_name(tmp_path: Path) -> None:
 def test_one_row_per_transaction_across_members_with_member_position_and_sequence() -> None:
     result = flatten_redemption_feed(feed("multi"))
 
-    assert [(r["member_id"], r["txn_id"], r["file_row_number"], r["txn_seq"]) for r in result.rows] == [
+    assert [
+        (r["member_id"], r["txn_id"], r["file_row_number"], r["txn_seq"]) for r in result.rows
+    ] == [
         ("223457", "RX10091", 1, 1),
         ("223457", "RX10092", 1, 2),
         ("223458", "RX10093", 2, 1),
@@ -136,7 +146,9 @@ def test_an_empty_redemptions_array_is_still_recorded_as_a_member() -> None:
 
 
 def test_a_feed_of_only_empty_arrays_yields_no_rows_but_lists_the_members(tmp_path: Path) -> None:
-    path = write_feed(tmp_path, [{"member_id": "223457", "feed_date": "20240115", "redemptions": []}])
+    path = write_feed(
+        tmp_path, [{"member_id": "223457", "feed_date": "20240115", "redemptions": []}]
+    )
 
     result = flatten_redemption_feed(path)
 
@@ -161,8 +173,21 @@ def test_member_id_keeps_its_leading_zeros() -> None:
 
 
 def test_a_numeric_member_id_in_the_json_becomes_plain_text(tmp_path: Path) -> None:
-    content = [{"member_id": 7890, "feed_date": "20240115", "redemptions": [
-        {"txn_id": "RX1", "txn_date": "20240110", "partner": "P", "miles_redeemed": 1, "status": "COMPLETED"}]}]
+    content = [
+        {
+            "member_id": 7890,
+            "feed_date": "20240115",
+            "redemptions": [
+                {
+                    "txn_id": "RX1",
+                    "txn_date": "20240110",
+                    "partner": "P",
+                    "miles_redeemed": 1,
+                    "status": "COMPLETED",
+                }
+            ],
+        }
+    ]
 
     result = flatten_redemption_feed(write_feed(tmp_path, content))
 
@@ -177,9 +202,24 @@ def test_a_numeric_member_id_in_the_json_becomes_plain_text(tmp_path: Path) -> N
     ("miles", "text"),
     [(12000, "12000"), (-500, "-500"), (0, "0"), ("007", "007"), ("12k", "12k")],
 )
-def test_miles_redeemed_is_carried_as_text_without_judgement(tmp_path: Path, miles, text: str) -> None:
-    content = [{"member_id": "223457", "feed_date": "20240115", "redemptions": [
-        {"txn_id": "RX1", "txn_date": "20240110", "partner": "P", "miles_redeemed": miles, "status": "COMPLETED"}]}]
+def test_miles_redeemed_is_carried_as_text_without_judgement(
+    tmp_path: Path, miles, text: str
+) -> None:
+    content = [
+        {
+            "member_id": "223457",
+            "feed_date": "20240115",
+            "redemptions": [
+                {
+                    "txn_id": "RX1",
+                    "txn_date": "20240110",
+                    "partner": "P",
+                    "miles_redeemed": miles,
+                    "status": "COMPLETED",
+                }
+            ],
+        }
+    ]
 
     result = flatten_redemption_feed(write_feed(tmp_path, content))
 

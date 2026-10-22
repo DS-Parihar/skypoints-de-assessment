@@ -32,7 +32,9 @@ def feed(scenario: str, name: str = F1) -> Path:
     return FIXTURES / scenario / name
 
 
-def load(con, scenario: str, name: str = F1, batch_id: str = "b1", **kwargs) -> RedemptionLoadResult:
+def load(
+    con, scenario: str, name: str = F1, batch_id: str = "b1", **kwargs
+) -> RedemptionLoadResult:
     return load_redemption_feed(con, feed(scenario, name), batch_id, **kwargs)
 
 
@@ -125,7 +127,9 @@ def test_an_empty_redemptions_array_stages_nothing_for_that_member(con) -> None:
     assert (result.members_read, result.rows_flattened, result.rows_staged) == (2, 1, 1)
 
 
-def test_an_empty_redemptions_array_is_recorded_in_raw_in_the_finding_and_in_the_result(con) -> None:
+def test_an_empty_redemptions_array_is_recorded_in_raw_in_the_finding_and_in_the_result(
+    con,
+) -> None:
     result = load(con, "empty_array")
 
     raw_members = con.execute(
@@ -156,7 +160,9 @@ def test_the_dropped_duplicate_is_recorded_not_silently_lost(con) -> None:
     assert "RX10091" in payload and "PENDING" in payload  # the dropped version, by status
 
 
-@pytest.mark.parametrize("order", [(F0, F1), (F1, F0)], ids=["older-file-first", "newer-file-first"])
+@pytest.mark.parametrize(
+    "order", [(F0, F1), (F1, F0)], ids=["older-file-first", "newer-file-first"]
+)
 def test_a_txn_id_re_sent_in_a_later_feed_ends_with_the_newest_version_in_either_load_order(
     con, order
 ) -> None:
@@ -189,7 +195,9 @@ def test_a_negative_miles_transaction_is_quarantined_and_not_staged(con) -> None
 def test_the_quarantined_negative_transaction_keeps_its_original_values(con) -> None:
     load(con, "negative_miles")
 
-    payload = json.loads(con.execute("SELECT raw_payload::VARCHAR FROM dq.quarantine").fetchone()[0])
+    payload = json.loads(
+        con.execute("SELECT raw_payload::VARCHAR FROM dq.quarantine").fetchone()[0]
+    )
     text = json.dumps(payload)
     assert "RX10091" in text and "-500" in text and "223457" in text
 
@@ -242,8 +250,21 @@ def test_the_staged_row_carries_the_flag(con) -> None:
 
 
 def test_a_txn_date_equal_to_the_feed_date_is_not_flagged(con, tmp_path: Path) -> None:
-    content = [{"member_id": "223457", "feed_date": "20240115", "redemptions": [
-        {"txn_id": "RX1", "txn_date": "20240115", "partner": "P", "miles_redeemed": 1, "status": "COMPLETED"}]}]
+    content = [
+        {
+            "member_id": "223457",
+            "feed_date": "20240115",
+            "redemptions": [
+                {
+                    "txn_id": "RX1",
+                    "txn_date": "20240115",
+                    "partner": "P",
+                    "miles_redeemed": 1,
+                    "status": "COMPLETED",
+                }
+            ],
+        }
+    ]
     path = tmp_path / F1
     path.write_text(json.dumps(content), encoding="utf-8")
 

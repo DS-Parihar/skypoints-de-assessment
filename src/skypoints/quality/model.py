@@ -38,9 +38,15 @@ class QualityConfig:
     country_map: Mapping[str, str] = field(default_factory=lambda: dict(SEED_COUNTRY_MAP))
     max_lengths: Mapping[str, int] = field(
         default_factory=lambda: {
-            "member_name": 255, "member_id": 18, "tier_code": 5, "agent_name": 255,
-            "state": 5, "country": 5, "post_code": 5, "active_member": 1,
-        }  # fmt: skip
+            "member_name": 255,
+            "member_id": 18,
+            "tier_code": 5,
+            "agent_name": 255,
+            "state": 5,
+            "country": 5,
+            "post_code": 5,
+            "active_member": 1,
+        }
     )
     # source_system -> {date column -> format name understood by derive.parse_date}
     date_formats: Mapping[str, Mapping[str, str]] = field(

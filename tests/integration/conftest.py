@@ -23,16 +23,20 @@ def add_raw(con: duckdb.DuckDBPyConnection):
     """Insert one detail row into RAW.MEMBER_FEED_RAW. Defaults make a valid member."""
 
     def _add(row_number: int = 2, **overrides) -> None:
-        values = dict(
-            member_name="Elena", member_id="223457", enrollment_date="20101012",
-            last_flight_date="20121013", tier_code="GLD", agent_name="Sam", state="CA",
-            country="USA", post_code="02134", date_of_birth="03051985", active_member="A",
-            source_system="SKYPOINTS", file_name=DEFAULT_FILE, file_ts=DEFAULT_FILE_TS,
-            batch_id="b1",
-        )  # fmt: skip
+        values = {
+            "member_name": "Elena", "member_id": "223457", "enrollment_date": "20101012",
+            "last_flight_date": "20121013", "tier_code": "GLD", "agent_name": "Sam", "state": "CA",
+            "country": "USA", "post_code": "02134", "date_of_birth": "03051985", "active_member": "A",
+            "source_system": "SKYPOINTS", "file_name": DEFAULT_FILE, "file_ts": DEFAULT_FILE_TS,
+            "batch_id": "b1",
+        }  # fmt: skip
         values.update(overrides)
         member_id = values["member_id"]
-        key = f"{values['source_system']}:{member_id.strip()}" if member_id and member_id.strip() else None
+        key = (
+            f"{values['source_system']}:{member_id.strip()}"
+            if member_id and member_id.strip()
+            else None
+        )
         con.execute(
             "INSERT INTO raw.member_feed_raw (record_type, member_name, member_id, enrollment_date, "
             "last_flight_date, tier_code, agent_name, state, country, post_code, date_of_birth, "

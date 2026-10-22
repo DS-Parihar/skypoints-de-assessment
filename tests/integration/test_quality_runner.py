@@ -72,7 +72,9 @@ def test_a_rejected_row_is_not_staged(con, add_raw) -> None:
     assert _all(con, "SELECT member_id FROM staging.member_stg") == [("223458",)]
 
 
-def test_a_row_that_breaks_two_reject_rules_is_quarantined_once_with_both_codes(con, add_raw) -> None:
+def test_a_row_that_breaks_two_reject_rules_is_quarantined_once_with_both_codes(
+    con, add_raw
+) -> None:
     add_raw(2, member_name="", member_id="")
 
     summary = run_quality(con, "b1", AS_OF)
@@ -269,7 +271,8 @@ def test_a_fail_file_header_stops_that_file_but_not_the_other_files(con, add_raw
     assert summary.failed_files == (FILE_A,)
     assert _one(con, "SELECT count(*) FROM dq.quarantine") == (0,)  # not row by row
     assert _all(
-        con, "SELECT file_name, file_row_number, rule_code, severity, column_name FROM dq.row_finding"
+        con,
+        "SELECT file_name, file_row_number, rule_code, severity, column_name FROM dq.row_finding",
     ) == [(FILE_A, None, "DQ014", "FAIL_FILE", "Region")]
 
 
@@ -400,9 +403,13 @@ def test_the_brief_sample_fires_only_the_expected_rules_and_all_five_reach_stagi
     }
     assert _one(con, "SELECT count(*) FROM dq.quarantine") == (0,)  # nothing rejected
     assert not _all(con, "SELECT 1 FROM dq.row_finding WHERE severity = 'ROUTE'")  # nothing routed
-    assert _all(
-        con, "SELECT country_code FROM staging.member_stg ORDER BY file_row_number"
-    ) == [("USA",), ("IND",), ("PHL",), ("CAN",), ("AUS",)]
+    assert _all(con, "SELECT country_code FROM staging.member_stg ORDER BY file_row_number") == [
+        ("USA",),
+        ("IND",),
+        ("PHL",),
+        ("CAN",),
+        ("AUS",),
+    ]
     assert _one(con, "SELECT count(*) FROM staging.member_stg") == (5,)
     assert dict(summary.findings_by_rule) == {"DQ013": 2, "DQ014": 1, "DQ017": 2}
     assert (summary.rows_read, summary.rows_staged, summary.rows_rejected) == (5, 5, 0)

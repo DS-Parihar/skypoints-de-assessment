@@ -30,24 +30,24 @@ SAMPLE_HEADER = [c for c in FULL_HEADER if c != "Post_Code"]  # the brief's 10 f
 
 def make_row(row_number: int = 2, **overrides) -> PreparedRow:
     """A fully valid member row; override single fields to break one rule at a time."""
-    values = dict(
-        batch_id="b1",
-        file_name="f.dat",
-        file_row_number=row_number,
-        source_system="SKYPOINTS",
-        member_key="SKYPOINTS:223457",
-        member_name="Elena",
-        member_id="223457",
-        enrollment_date="20101012",
-        last_flight_date="20121013",
-        date_of_birth="03051985",
-        tier_code="GLD",
-        agent_name="Sam",
-        state="CA",
-        country="USA",
-        post_code="02134",
-        active_member="A",
-    )
+    values = {
+        "batch_id": "b1",
+        "file_name": "f.dat",
+        "file_row_number": row_number,
+        "source_system": "SKYPOINTS",
+        "member_key": "SKYPOINTS:223457",
+        "member_name": "Elena",
+        "member_id": "223457",
+        "enrollment_date": "20101012",
+        "last_flight_date": "20121013",
+        "date_of_birth": "03051985",
+        "tier_code": "GLD",
+        "agent_name": "Sam",
+        "state": "CA",
+        "country": "USA",
+        "post_code": "02134",
+        "active_member": "A",
+    }
     values.update(overrides)
     return PreparedRow(**values)
 
@@ -155,7 +155,9 @@ def test_a_failing_row_produces_a_finding_with_code_severity_and_reason(code: st
 
 
 def test_a_row_finding_carries_the_row_identity_and_the_offending_value() -> None:
-    row = make_row(7, member_id="12345", member_key="SKYPOINTS:12345", file_name="g.dat", batch_id="b9")
+    row = make_row(
+        7, member_id="12345", member_key="SKYPOINTS:12345", file_name="g.dat", batch_id="b9"
+    )
 
     (finding,) = run("DQ013", [row])
 
@@ -168,9 +170,7 @@ def test_a_row_finding_carries_the_row_identity_and_the_offending_value() -> Non
 
 
 @pytest.mark.parametrize("blank", [None, "", "   "], ids=["NULL", "empty", "spaces"])
-@pytest.mark.parametrize(
-    ("code", "column"), [("DQ001", "member_name"), ("DQ002", "member_id")]
-)
+@pytest.mark.parametrize(("code", "column"), [("DQ001", "member_name"), ("DQ002", "member_id")])
 def test_blank_and_null_are_the_same_for_mandatory_text(code: str, column: str, blank) -> None:
     findings = run(code, [make_row(**{column: blank})])
 
@@ -273,7 +273,9 @@ def test_dq005_reports_each_overlong_column() -> None:
         ("date_of_birth", "02291999"),
     ],
 )
-def test_dq006_fires_for_an_optional_date_that_is_present_but_invalid(column: str, bad: str) -> None:
+def test_dq006_fires_for_an_optional_date_that_is_present_but_invalid(
+    column: str, bad: str
+) -> None:
     assert hits(run("DQ006", [make_row(**{column: bad})])) == {(2, column)}
 
 
@@ -488,7 +490,9 @@ def test_dq012_allows_a_blank_value(blank) -> None:
 def test_dq012_uses_the_active_values_from_the_config() -> None:
     config = QualityConfig(active_values=frozenset({"Y", "N"}))
 
-    assert hits(run("DQ012", [make_row(active_member="A")], config=config)) == {(2, "active_member")}
+    assert hits(run("DQ012", [make_row(active_member="A")], config=config)) == {
+        (2, "active_member")
+    }
     assert run("DQ012", [make_row(active_member="Y")], config=config) == []
 
 
@@ -674,9 +678,14 @@ def brief_rows() -> list[PreparedRow]:
     return [
         make_row(
             row_number,
-            member_name=name, member_id=member_id, member_key=f"SKYPOINTS:{member_id}",
-            tier_code=tier, state=state, country=country, post_code=None,
-        )  # fmt: skip
+            member_name=name,
+            member_id=member_id,
+            member_key=f"SKYPOINTS:{member_id}",
+            tier_code=tier,
+            state=state,
+            country=country,
+            post_code=None,
+        )
         for row_number, (name, member_id, tier, state, country) in enumerate(BRIEF_ROWS, start=2)
     ]
 

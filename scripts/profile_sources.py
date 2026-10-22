@@ -8,9 +8,9 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
 
 import pandas as pd
 
@@ -55,7 +55,9 @@ DATE_FORMATS: dict[str, Callable[[str], bool]] = {
 
 
 def is_blank(value: object) -> bool:
-    return value is None or (isinstance(value, float) and pd.isna(value)) or str(value).strip() == ""
+    return (
+        value is None or (isinstance(value, float) and pd.isna(value)) or str(value).strip() == ""
+    )
 
 
 def is_null_token(value: object) -> bool:
@@ -124,7 +126,11 @@ def profile_column(name: str, series: pd.Series) -> list[str]:
 
 def profile_file(path: Path) -> str:
     df = load_file(path)
-    out = [f"=== {path.name}", f"rows: {len(df)}", f"columns ({len(df.columns)}): {list(df.columns)}"]
+    out = [
+        f"=== {path.name}",
+        f"rows: {len(df)}",
+        f"columns ({len(df.columns)}): {list(df.columns)}",
+    ]
     for col in df.columns:
         out.extend(profile_column(str(col), df[col]))
     return "\n".join(out)

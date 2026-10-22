@@ -41,7 +41,9 @@ RULES: dict[str, Rule] = {
         Rule("DQ011", "tier present but not an allowed tier", _W),
         Rule("DQ012", "is_active present but not an allowed value", _W),
         Rule("DQ013", "member_id shorter than the expected length", _W),
-        Rule("DQ014", "header: missing mandatory/unknown/duplicate column, or missing optional", _FF),
+        Rule(
+            "DQ014", "header: missing mandatory/unknown/duplicate column, or missing optional", _FF
+        ),
         Rule("DQ015", "raw row count differs from staged plus rejected rows", _FB),
         Rule("DQ016", "non-blank count of a text column is higher in raw than in staging", _FB),
         Rule("DQ017", "country resolved through an alias, not a 3-letter ISO code", _W),

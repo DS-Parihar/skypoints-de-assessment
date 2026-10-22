@@ -11,9 +11,9 @@ Contract under test:
   * all-or-nothing, and a file name that was already loaded is skipped (append-only raw)
 """
 
+import shutil
 from datetime import date, datetime
 from pathlib import Path
-import shutil
 
 import duckdb
 import pytest
@@ -63,7 +63,9 @@ def test_warnings_from_the_parser_are_returned() -> None:
 
     result = load_member_feed(connection, SAMPLE_FILE, "b1")
 
-    assert [(w.code, w.column) for w in result.warnings] == [("MISSING_OPTIONAL_COLUMN", "Post_Code")]
+    assert [(w.code, w.column) for w in result.warnings] == [
+        ("MISSING_OPTIONAL_COLUMN", "Post_Code")
+    ]
     assert all(isinstance(w, FeedWarning) for w in result.warnings)
     connection.close()
 
@@ -93,7 +95,9 @@ def test_detail_rows_are_inserted_as_text_with_keys_and_lineage(con) -> None:
 def test_leading_zeros_and_blanks_are_kept_as_text(con) -> None:
     load_member_feed(con, FULL_FILE, "b1")
 
-    raj = _rows(con, "member_id, last_flight_date, agent_name, post_code, member_key", "member_id = '00789'")
+    raj = _rows(
+        con, "member_id, last_flight_date, agent_name, post_code, member_key", "member_id = '00789'"
+    )
 
     assert raj == [("00789", "", "", "", "SKYPOINTS:00789")]  # '' stays '', not NULL
 
@@ -193,7 +197,7 @@ def test_a_failure_part_way_through_rolls_everything_back(con, monkeypatch) -> N
 
     monkeypatch.setattr(loader, "parse_member_feed", broken_records)
 
-    with pytest.raises(Exception):
+    with pytest.raises((duckdb.Error, TypeError)):
         load_member_feed(con, FULL_FILE, "b1")
 
     assert con.execute("SELECT count(*) FROM raw.member_feed_raw").fetchone() == (0,)

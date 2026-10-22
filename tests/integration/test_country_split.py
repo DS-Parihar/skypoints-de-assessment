@@ -124,8 +124,9 @@ def tables_holding(con: duckdb.DuckDBPyConnection, member_key: str) -> list[str]
     return [
         table
         for table in mart_tables(con)
-        if con.execute(f"SELECT count(*) FROM mart.{table} WHERE member_key = ?", [member_key])
-        .fetchone()[0]
+        if con.execute(
+            f"SELECT count(*) FROM mart.{table} WHERE member_key = ?", [member_key]
+        ).fetchone()[0]
     ]
 
 
@@ -181,9 +182,7 @@ def one_country_table_per_member(con: duckdb.DuckDBPyConnection):
     """Invariant checked after EVERY test: each member_key in CORE.MEMBER_CURRENT appears in
     exactly one MART.MEMBERS_* table, and no table holds a key that is not in CORE."""
     yield
-    core_keys = {
-        k for (k,) in con.execute("SELECT member_key FROM core.member_current").fetchall()
-    }
+    core_keys = {k for (k,) in con.execute("SELECT member_key FROM core.member_current").fetchall()}
     seen: Counter = Counter()
     for table in mart_tables(con):
         for (key,) in con.execute(f"SELECT member_key FROM mart.{table}").fetchall():
@@ -210,7 +209,7 @@ def run_day2(con):
 
 
 def test_move_after_day1_ravi_is_in_india_only(con) -> None:
-    after_day1 = run_day1(con)
+    run_day1(con)
     assert tables_holding(con, RAVI) == ["MEMBERS_IND"]
 
 
@@ -222,19 +221,19 @@ def test_move_first_appearance_is_not_a_move(con) -> None:
 
 
 def test_move_after_day2_ravi_is_in_usa_only(con) -> None:
-    after_day2 = run_day2(con)
+    run_day2(con)
     assert tables_holding(con, RAVI) == ["MEMBERS_USA"]
 
 
 def test_move_member_current_has_one_row_for_ravi_from_day2(con) -> None:
-    after_day2 = run_day2(con)
+    run_day2(con)
     country_code, file_ts, _, file_name = core_row(con, RAVI)
 
     assert (country_code, file_ts, file_name) == ("USA", TS[2], DAY[2])
 
 
 def test_move_history_has_one_row_india_to_usa_dated_day2(con) -> None:
-    after_day2 = run_day2(con)
+    run_day2(con)
     assert history(con) == [(RAVI, "IND", "USA", TS[2], DAY[2])]
 
 
@@ -245,7 +244,7 @@ def test_move_result_lists_the_move(con) -> None:
 
 
 def test_move_members_who_did_not_move_are_untouched(con) -> None:
-    after_day2 = run_day2(con)
+    run_day2(con)
     assert tables_holding(con, ELENA) == ["MEMBERS_USA"]
     assert core_row(con, ELENA)[1] == TS[1]
 
@@ -261,7 +260,9 @@ def test_move_rows_per_table_covers_every_country_table_and_unassigned(con) -> N
 # ---- 2. the same member twice in one file ---------------------------------------------------
 
 
-def test_same_file_duplicate_dq004_quarantines_the_earlier_row_and_ravi_ends_in_usa_only(con) -> None:
+def test_same_file_duplicate_dq004_quarantines_the_earlier_row_and_ravi_ends_in_usa_only(
+    con,
+) -> None:
     load_feed(con, feed("same_file", 1))
 
     split_by_country(con)
@@ -300,7 +301,7 @@ def test_running_the_split_twice_changes_nothing(con) -> None:
 
 
 def test_running_the_split_twice_adds_no_history_rows_after_a_move(con) -> None:
-    after_day2 = run_day2(con)
+    run_day2(con)
     split_by_country(con)
     split_by_country(con)
 
@@ -308,7 +309,7 @@ def test_running_the_split_twice_adds_no_history_rows_after_a_move(con) -> None:
 
 
 def test_reloading_the_whole_day1_file_through_the_chain_changes_no_table(con) -> None:
-    after_day1 = run_day1(con)
+    run_day1(con)
     before = snapshot(con)
 
     load_feed(con, feed("move", 1))
@@ -352,8 +353,10 @@ def test_late_arrival_members_only_in_the_late_file_are_still_added(con) -> None
 
 @pytest.mark.parametrize(
     "member_key",
-    [pytest.param("SKYPOINTS:223460", id="Zed-country-XYZ"),
-     pytest.param("SKYPOINTS:223461", id="Nul-blank-country")],
+    [
+        pytest.param("SKYPOINTS:223460", id="Zed-country-XYZ"),
+        pytest.param("SKYPOINTS:223461", id="Nul-blank-country"),
+    ],
 )
 def test_unknown_or_blank_country_goes_to_unassigned_only(con, member_key: str) -> None:
     load_feed(con, feed("unassigned", 1))
@@ -377,8 +380,10 @@ def test_a_country_code_missing_from_the_ref_map_is_unassigned(con) -> None:
 
 @pytest.mark.parametrize(
     ("member_id", "table"),
-    [pytest.param("223462", "MEMBERS_AUS", id="Jacob-AU"),
-     pytest.param("223459", "MEMBERS_PHL", id="Mateo-PHIL")],
+    [
+        pytest.param("223462", "MEMBERS_AUS", id="Jacob-AU"),
+        pytest.param("223459", "MEMBERS_PHL", id="Mateo-PHIL"),
+    ],
 )
 def test_an_alias_country_routes_to_its_iso_table(con, member_id: str, table: str) -> None:
     load_feed(con, feed("aliases", 1))
@@ -440,7 +445,9 @@ def test_moves_inside_one_batch_collapse_to_a_single_history_row(con) -> None:
 # ---- 8. latest record has a blank country ----------------------------------------------------
 
 
-def test_documented_decision_latest_record_with_blank_country_moves_member_to_unassigned(con) -> None:
+def test_documented_decision_latest_record_with_blank_country_moves_member_to_unassigned(
+    con,
+) -> None:
     """Latest wins even when the newest record has no country: the member leaves their old
     country table and is shown as unassigned. This is a documented decision, not an accident."""
     load_feed(con, feed("blank_country", 1))
@@ -560,7 +567,9 @@ def test_a_fail_batch_finding_blocks_only_its_own_batch(con) -> None:
     assert tables_holding(con, RAVI) == []
 
 
-def test_documented_decision_without_a_batch_id_any_blocked_batch_refuses_the_whole_run(con) -> None:
+def test_documented_decision_without_a_batch_id_any_blocked_batch_refuses_the_whole_run(
+    con,
+) -> None:
     add_staging(con, "223458", "IND", file_name="a.dat", batch_id="blocked")
     add_staging(con, "223457", "USA", file_name="b.dat", batch_id="clean")
     con.execute(
