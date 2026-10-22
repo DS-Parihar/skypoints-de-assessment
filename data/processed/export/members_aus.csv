@@ -1,0 +1,4 @@
+member_key,source_system,member_id,member_name,country_code,tier_code,date_of_birth,age,enrollment_date,last_flight_date,stale_member,file_name
+AUS:1,AUS,1,Mike,AUS,PLT,,,2022-05-11,2022-08-01,true,AUS.xlsx
+AUS:3,AUS,3,Cristina,AUS,SLV,1998-03-12,25,2022-03-12,2022-03-20,true,AUS.xlsx
+SKYPOINTS:2256,SKYPOINTS,2256,Jacob,AUS,SLV,1985-03-05,38,2010-10-12,2012-10-13,true,SKYPOINTS_MEMBERS_20240115_00000000.dat

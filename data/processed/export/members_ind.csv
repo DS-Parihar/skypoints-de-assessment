@@ -1,0 +1,5 @@
+member_key,source_system,member_id,member_name,country_code,tier_code,date_of_birth,age,enrollment_date,last_flight_date,stale_member,file_name
+IND:1,IND,1,Vikas,IND,SLV,1998-12-01,25,2022-01-01,2022-06-15,true,IND.csv
+IND:2,IND,2,Rahul,IND,GLD,1982-08-13,41,2022-03-05,2022-03-10,true,IND.csv
+IND:3,IND,3,Sameer,IND,GLD,1952-08-13,71,2022-02-20,2022-02-25,true,IND.csv
+SKYPOINTS:223458,SKYPOINTS,223458,Ravi,IND,SLV,1985-03-05,38,2010-10-12,2012-10-13,true,SKYPOINTS_MEMBERS_20240115_00000000.dat

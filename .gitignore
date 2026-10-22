@@ -23,6 +23,4 @@ htmlcov/
 *.duckdb
 *.duckdb.wal
 
-# Processed outputs (data/raw stays tracked)
-data/processed/*
-!data/processed/.gitkeep
+# data/processed/export (the CSV deliverables) is tracked; only the database file is ignored (*.duckdb above).

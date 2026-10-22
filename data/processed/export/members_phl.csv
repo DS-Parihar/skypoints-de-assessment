@@ -1,0 +1,2 @@
+member_key,source_system,member_id,member_name,country_code,tier_code,date_of_birth,age,enrollment_date,last_flight_date,stale_member,file_name
+SKYPOINTS:223459,SKYPOINTS,223459,Mateo,PHL,GLD,1985-03-05,38,2010-10-12,2012-10-13,true,SKYPOINTS_MEMBERS_20240115_00000000.dat

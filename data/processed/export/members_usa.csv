@@ -1,0 +1,4 @@
+member_key,source_system,member_id,member_name,country_code,tier_code,date_of_birth,age,enrollment_date,last_flight_date,stale_member,file_name
+SKYPOINTS:223457,SKYPOINTS,223457,Elena,USA,GLD,1985-03-05,38,2010-10-12,2012-10-13,true,SKYPOINTS_MEMBERS_20240115_00000000.dat
+USA:1,USA,1,Sam,USA,PLT,,,2022-06-15,2022-08-20,true,USA.csv
+USA:3,USA,3,Mike,USA,GLD,,,2021-12-28,2021-12-30,true,USA.csv
