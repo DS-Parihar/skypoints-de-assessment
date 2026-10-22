@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Format check
+        run: ruff format --check .
+
+      - name: Tests with coverage (fail under 80%)
+        run: pytest -q --cov=src --cov-fail-under=80
+
+      - name: Run the pipeline end to end
+        run: |
+          PYTHONPATH=src python -m skypoints.pipeline --as-of 2024-01-15 --db "$RUNNER_TEMP/skypoints.duckdb"

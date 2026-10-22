@@ -1,8 +1,13 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "skypoints"
 version = "0.1.0"
 description = "SkyPoints member & redemption pipeline"
 requires-python = ">=3.12"
+dependencies = ["duckdb==1.1.3", "pandas==2.2.3", "openpyxl==3.1.5"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -11,3 +16,9 @@ pythonpath = ["src"]
 [tool.ruff]
 line-length = 100
 src = ["src", "tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.coverage.run]
+source = ["src"]
