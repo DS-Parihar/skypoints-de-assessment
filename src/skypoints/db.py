@@ -3,12 +3,30 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 import duckdb
 
 DEFAULT_DDL_DIR = Path(__file__).resolve().parents[2] / "sql" / "duckdb"
 _NUMBERED_SQL = re.compile(r"\d{2}_.*\.sql")  # 00_setup.sql, 01_raw.sql, ...
+
+
+@contextmanager
+def atomic(con: duckdb.DuckDBPyConnection) -> Iterator[None]:
+    """Run a block in one transaction; join the caller's transaction if one is already open."""
+    try:
+        con.execute("BEGIN TRANSACTION")
+    except duckdb.TransactionException:
+        yield
+        return
+    try:
+        yield
+    except BaseException:
+        con.execute("ROLLBACK")
+        raise
+    con.execute("COMMIT")
 
 
 def ddl_files(ddl_dir: Path) -> list[Path]:

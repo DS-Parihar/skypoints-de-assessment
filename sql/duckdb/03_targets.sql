@@ -78,6 +78,28 @@ CREATE TABLE IF NOT EXISTS CORE.MEMBER_COUNTRY_HISTORY (
     RECORDED_AT        TIMESTAMP   NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Redemption transactions, one row per txn_id (the newest version), promoted from
+-- STAGING.REDEMPTION_STG. MEMBER_KEY joins to CORE.MEMBER_CURRENT; an orphan (no matching
+-- member) stays here and shows up in MART.MEMBER_REDEMPTION_SUMMARY.
+CREATE TABLE IF NOT EXISTS CORE.REDEMPTION_TXN (
+    TXN_ID             VARCHAR(30)   NOT NULL,
+    MEMBER_ID          VARCHAR(18)   NOT NULL,   -- text: leading zeros survive
+    MEMBER_KEY         VARCHAR(40)   NOT NULL,   -- 'SKYPOINTS:' || member_id (ADR 0002)
+    FEED_DATE          DATE          NOT NULL,
+    TXN_DATE           DATE          NOT NULL,
+    PARTNER            VARCHAR(100),
+    MILES_REDEEMED     BIGINT        NOT NULL,
+    STATUS             VARCHAR(20)   NOT NULL,
+    DQ_TXN_AFTER_FEED  BOOLEAN       NOT NULL DEFAULT FALSE,
+    FILE_NAME          VARCHAR       NOT NULL,
+    FILE_ROW_NUMBER    BIGINT        NOT NULL,
+    TXN_SEQ            INTEGER       NOT NULL,
+    FILE_TS            TIMESTAMP     NOT NULL,
+    BATCH_ID           VARCHAR       NOT NULL,
+    UPDATED_AT         TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- audit only
+    PRIMARY KEY (TXN_ID)
+);
+
 -- Country tables for the seed map (one per distinct COUNTRY_CODE).
 CREATE TABLE IF NOT EXISTS MART.MEMBERS_USA AS SELECT * FROM CORE.MEMBER_CURRENT WHERE FALSE;
 CREATE TABLE IF NOT EXISTS MART.MEMBERS_IND AS SELECT * FROM CORE.MEMBER_CURRENT WHERE FALSE;

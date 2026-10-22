@@ -60,13 +60,15 @@ class InvalidFileNameError(ValueError):
     """The file name does not match SKYPOINTS_MEMBERS_YYYYMMDD_HHMMSSTT.dat."""
 
 
-def parse_file_ts(file_name: str) -> datetime:
-    """Return the timestamp in a feed file name; TT is hundredths of a second."""
-    match = FILE_NAME_PATTERN.fullmatch(file_name)
+def parse_feed_file_ts(file_name: str, feed: str, extension: str) -> datetime:
+    """Return the timestamp in SKYPOINTS_<feed>_YYYYMMDD_HHMMSSTT.<extension>; TT is hundredths
+    of a second. Raises InvalidFileNameError for any other name."""
+    pattern = re.compile(rf"SKYPOINTS_{feed}_(\d{{8}})_(\d{{2}})(\d{{2}})(\d{{2}})(\d{{2}})\.{extension}")
+    match = pattern.fullmatch(file_name)
     if match is None:
         raise InvalidFileNameError(
-            f"invalid member feed file name: {file_name!r} "
-            "(expected SKYPOINTS_MEMBERS_YYYYMMDD_HHMMSSTT.dat)"
+            f"invalid {feed.lower()} feed file name: {file_name!r} "
+            f"(expected SKYPOINTS_{feed}_YYYYMMDD_HHMMSSTT.{extension})"
         )
     day, hour, minute, second, hundredths = match.groups()
     try:
@@ -74,6 +76,11 @@ def parse_file_ts(file_name: str) -> datetime:
     except ValueError as exc:
         raise InvalidFileNameError(f"invalid timestamp in file name {file_name!r}: {exc}") from exc
     return moment.replace(microsecond=int(hundredths) * 10_000)
+
+
+def parse_file_ts(file_name: str) -> datetime:
+    """Timestamp of a member feed file name (SKYPOINTS_MEMBERS_YYYYMMDD_HHMMSSTT.dat)."""
+    return parse_feed_file_ts(file_name, "MEMBERS", "dat")
 
 
 def _check_header(names: list[str], file_name: str) -> list[FeedWarning]:

@@ -14,13 +14,12 @@ Rules:
 from __future__ import annotations
 
 import re
-from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 
 import duckdb
 
-from skypoints.db import DEFAULT_DDL_DIR
+from skypoints.db import DEFAULT_DDL_DIR, atomic
 
 TRANSFORM_DIR = DEFAULT_DDL_DIR / "transform"
 UNASSIGNED_TABLE = "MEMBERS_UNASSIGNED"
@@ -63,22 +62,6 @@ class SplitResult:
 
 def _sql(name: str) -> str:
     return (TRANSFORM_DIR / name).read_text(encoding="utf-8")
-
-
-@contextmanager
-def _atomic(con: duckdb.DuckDBPyConnection):
-    """One transaction; joins the caller's transaction if one is already open."""
-    try:
-        con.execute("BEGIN TRANSACTION")
-    except duckdb.TransactionException:
-        yield
-        return
-    try:
-        yield
-    except BaseException:
-        con.execute("ROLLBACK")
-        raise
-    con.execute("COMMIT")
 
 
 def _check_not_blocked(con: duckdb.DuckDBPyConnection, batch_id: str | None) -> None:
@@ -166,20 +149,20 @@ def _refresh(con: duckdb.DuckDBPyConnection) -> dict[str, int]:
 def merge_member_current(con: duckdb.DuckDBPyConnection, batch_id: str | None = None) -> MergeResult:
     """STAGING.MEMBER_STG -> CORE.MEMBER_CURRENT. batch_id=None means all staging rows."""
     _check_not_blocked(con, batch_id)
-    with _atomic(con):
+    with atomic(con):
         return _merge(con, batch_id)
 
 
 def refresh_country_tables(con: duckdb.DuckDBPyConnection) -> dict[str, int]:
     """CORE.MEMBER_CURRENT -> MART.MEMBERS_<ISO3> (created on demand) and MEMBERS_UNASSIGNED."""
-    with _atomic(con):
+    with atomic(con):
         return _refresh(con)
 
 
 def split_by_country(con: duckdb.DuckDBPyConnection, batch_id: str | None = None) -> SplitResult:
     """merge_member_current, then refresh_country_tables, in one transaction."""
     _check_not_blocked(con, batch_id)
-    with _atomic(con):
+    with atomic(con):
         merged = _merge(con, batch_id)
         rows_per_table = _refresh(con)
     return SplitResult(

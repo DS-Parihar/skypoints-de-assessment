@@ -64,6 +64,27 @@ CREATE TABLE IF NOT EXISTS STAGING.MEMBER_STG (
 -- SYSTEM$CLUSTERING_INFORMATION shows poor pruning.
 COMMENT = 'Typed member rows with derived Age/Stale_Member and DQ flags';
 
+-- Flattened redemptions, typed: one row per txn_id (the newest version, RD002), one row per
+-- transaction otherwise. Transactions that fail a REJECT rule are in DQ.QUARANTINE, not here.
+CREATE TABLE IF NOT EXISTS STAGING.REDEMPTION_STG (
+    MEMBER_ID          VARCHAR(18)   NOT NULL,   -- text: leading zeros survive
+    MEMBER_KEY         VARCHAR(40)   NOT NULL,   -- 'SKYPOINTS:' || member_id: joins to the member feed (ADR 0002)
+    FEED_DATE          DATE          NOT NULL,
+    TXN_ID             VARCHAR(30)   NOT NULL,
+    TXN_DATE           DATE          NOT NULL,
+    PARTNER            VARCHAR(100),
+    MILES_REDEEMED     NUMBER(38,0)        NOT NULL,
+    STATUS             VARCHAR(20)   NOT NULL,
+    DQ_TXN_AFTER_FEED  BOOLEAN       NOT NULL DEFAULT FALSE,   -- RD005: txn_date is after feed_date
+    FILE_NAME          VARCHAR       NOT NULL,
+    FILE_ROW_NUMBER    NUMBER(38,0)        NOT NULL,   -- position of the member object in the file
+    TXN_SEQ            INTEGER       NOT NULL,   -- position of the transaction in the member's array
+    FILE_TS            TIMESTAMP_NTZ NOT NULL,
+    BATCH_ID           VARCHAR       NOT NULL,
+    STAGED_AT          TIMESTAMP_NTZ NOT NULL DEFAULT CURRENT_TIMESTAMP(),   -- audit only
+    CONSTRAINT PK_REDEMPTION_STG PRIMARY KEY (TXN_ID)   -- informational in Snowflake
+);
+
 -- -----------------------------------------------------------------------------
 -- DQ.QUARANTINE : rows that cannot be a member. Nothing is silently dropped.
 -- Member reason codes: MISSING_MEMBER_ID, MISSING_MEMBER_NAME,

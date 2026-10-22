@@ -93,6 +93,31 @@ CREATE TABLE IF NOT EXISTS CORE.MEMBER_COUNTRY_HISTORY (
 CLUSTER BY (MEMBER_KEY)
 COMMENT = 'Member country changes; the old country table keeps no trace';
 
+-- Redemption transactions, one row per txn_id (the newest version), promoted from
+-- STAGING.REDEMPTION_STG. MEMBER_KEY joins to CORE.MEMBER_CURRENT; an orphan (no matching
+-- member) stays here and shows up in MART.MEMBER_REDEMPTION_SUMMARY.
+CREATE TABLE IF NOT EXISTS CORE.REDEMPTION_TXN (
+    TXN_ID             VARCHAR(30)   NOT NULL,
+    MEMBER_ID          VARCHAR(18)   NOT NULL,   -- text: leading zeros survive
+    MEMBER_KEY         VARCHAR(40)   NOT NULL,   -- 'SKYPOINTS:' || member_id (ADR 0002)
+    FEED_DATE          DATE          NOT NULL,
+    TXN_DATE           DATE          NOT NULL,
+    PARTNER            VARCHAR(100),
+    MILES_REDEEMED     NUMBER(38,0)        NOT NULL,
+    STATUS             VARCHAR(20)   NOT NULL,
+    DQ_TXN_AFTER_FEED  BOOLEAN       NOT NULL DEFAULT FALSE,
+    FILE_NAME          VARCHAR       NOT NULL,
+    FILE_ROW_NUMBER    NUMBER(38,0)        NOT NULL,
+    TXN_SEQ            INTEGER       NOT NULL,
+    FILE_TS            TIMESTAMP_NTZ NOT NULL,
+    BATCH_ID           VARCHAR       NOT NULL,
+    UPDATED_AT         TIMESTAMP_NTZ NOT NULL DEFAULT CURRENT_TIMESTAMP(),   -- audit only
+    CONSTRAINT PK_REDEMPTION_TXN PRIMARY KEY (TXN_ID)   -- informational in Snowflake
+)
+-- CLUSTER BY MEMBER_KEY: the summary joins and groups by member_key.
+CLUSTER BY (MEMBER_KEY)
+COMMENT = 'One row per redemption transaction (newest version)';
+
 -- -----------------------------------------------------------------------------
 -- MART.CREATE_COUNTRY_TABLES : creates MART.MEMBERS_<ISO3> for every distinct
 -- active COUNTRY_CODE in the map. Safe to re-run; run again after adding a country.
