@@ -32,6 +32,15 @@ _LOAD_INPUT = (
 )
 
 
+def _config_from_ref(con: duckdb.DuckDBPyConnection) -> QualityConfig:
+    """Default config whose country map is REF.COUNTRY_CODE_MAP, so a country added to the table
+    is resolved without a code change. An empty table keeps the built-in map."""
+    rows = con.execute(
+        "SELECT raw_country_code, country_code FROM ref.country_code_map WHERE is_active"
+    ).fetchall()
+    return QualityConfig(country_map=dict(rows)) if rows else QualityConfig()
+
+
 def _script(name: str) -> str:
     return (TRANSFORM_DIR / name).read_text(encoding="utf-8")
 
@@ -47,7 +56,7 @@ def run_quality(
     Re-running a batch replaces its findings and summary and adds no duplicate quarantine
     or staging rows."""
     engine.clear_work_tables(con)
-    engine.load_config(con, config or QualityConfig(), as_of, batch_id)
+    engine.load_config(con, config or _config_from_ref(con), as_of, batch_id)
     con.execute(_LOAD_INPUT, [batch_id])
     if headers:
         engine.load_headers(con, headers, batch_id)
