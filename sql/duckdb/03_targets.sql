@@ -33,7 +33,8 @@ INSERT INTO REF.COUNTRY_CODE_MAP (RAW_COUNTRY_CODE, COUNTRY_CODE, COUNTRY_NAME) 
     ('AUS','AUS','Australia'),     ('AU','AUS','Australia')
 ON CONFLICT DO NOTHING;
 
--- One row per MEMBER_ID (latest file_ts, then file_row_number wins; ADR 0003).
+-- One row per MEMBER_KEY (latest file_ts, then file_row_number wins; ADR 0003).
+-- MEMBER_ID stays a plain column.
 CREATE TABLE IF NOT EXISTS CORE.MEMBER_CURRENT (
     MEMBER_NAME      VARCHAR(255)  NOT NULL,
     MEMBER_ID        VARCHAR(18)   NOT NULL,
@@ -46,10 +47,12 @@ CREATE TABLE IF NOT EXISTS CORE.MEMBER_CURRENT (
     POST_CODE        VARCHAR(5),
     DATE_OF_BIRTH    DATE,
     ACTIVE_MEMBER    CHAR(1),
+    SOURCE_SYSTEM    VARCHAR(20)   NOT NULL,
+    MEMBER_KEY       VARCHAR(40)   NOT NULL,   -- source_system || ':' || member_id (ADR 0002): the merge key
     COUNTRY_CODE     CHAR(3),                  -- NULL -> the row lives in MART.MEMBERS_UNASSIGNED
     AS_OF_DATE       DATE          NOT NULL,
     AGE              DECIMAL(3,0),
-    STALE_MEMBER     BOOLEAN       NOT NULL,
+    STALE_MEMBER     BOOLEAN,                  -- NULL = unknown (no usable flight date)
     DQ_DOB_INVALID               BOOLEAN NOT NULL DEFAULT FALSE,
     DQ_LAST_FLIGHT_DATE_INVALID  BOOLEAN NOT NULL DEFAULT FALSE,
     DQ_COUNTRY_UNKNOWN           BOOLEAN NOT NULL DEFAULT FALSE,
@@ -61,11 +64,12 @@ CREATE TABLE IF NOT EXISTS CORE.MEMBER_CURRENT (
     FILE_TS          TIMESTAMP     NOT NULL,
     BATCH_ID         VARCHAR       NOT NULL,
     UPDATED_AT       TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- audit only
-    PRIMARY KEY (MEMBER_ID)                    -- enforced in DuckDB (informational in Snowflake)
+    PRIMARY KEY (MEMBER_KEY)                   -- enforced in DuckDB (informational in Snowflake)
 );
 
 -- Member country changes; the old country table keeps no trace of the member.
 CREATE TABLE IF NOT EXISTS CORE.MEMBER_COUNTRY_HISTORY (
+    MEMBER_KEY         VARCHAR(40) NOT NULL,
     MEMBER_ID          VARCHAR(18) NOT NULL,
     OLD_COUNTRY_CODE   CHAR(3),
     NEW_COUNTRY_CODE   CHAR(3),

@@ -2,6 +2,8 @@
 -- 02_staging.sql  (DuckDB)
 -- Purpose : Typed staging table for members, the quarantine table, and the
 --           header check. Same names and columns as sql/snowflake/02_staging.sql.
+-- member_key = source_system || ':' || member_id (ADR 0002). The .dat member feed is source
+-- system 'SKYPOINTS'; the IND/USA/AUS extracts use their own code.
 -- Rules   : Mandatory columns are NOT NULL here and nowhere else. A raw row that
 --           breaks one goes to DQ.QUARANTINE with a reason code instead of
 --           failing the load. Other faults set a DQ_ flag and the row stays.
@@ -28,11 +30,15 @@ CREATE TABLE IF NOT EXISTS STAGING.MEMBER_STG (
     DATE_OF_BIRTH    DATE,                     -- optional; assumed MMDDYYYY (ADR 0005); unreadable -> NULL + flag
     ACTIVE_MEMBER    CHAR(1),                  -- spec 'Active Member'; the feed header calls it Is_Active
 
+    -- ---- key (ADR 0002) ----
+    SOURCE_SYSTEM    VARCHAR(20)   NOT NULL,   -- 'SKYPOINTS' for the .dat feed; 'IND' / 'USA' / 'AUS' for the extracts
+    MEMBER_KEY       VARCHAR(40)   NOT NULL,   -- source_system || ':' || member_id; member_id alone is NOT unique
+
     -- ---- derived ----
     COUNTRY_CODE     CHAR(3),                  -- ISO-3 via REF.COUNTRY_CODE_MAP; NULL if unmapped -> members_unassigned
     AS_OF_DATE       DATE          NOT NULL,   -- explicit run date for Age / Stale_Member
     AGE              DECIMAL(3,0),             -- whole years at AS_OF_DATE; NULL when DATE_OF_BIRTH is NULL
-    STALE_MEMBER     BOOLEAN       NOT NULL,   -- no flight in the 90 days before AS_OF_DATE; no flight date counts as stale (to confirm)
+    STALE_MEMBER     BOOLEAN,                  -- TRUE: last flight more than 90 days before AS_OF_DATE; NULL: unknown (no flight date, or one after AS_OF_DATE)
 
     -- ---- data-quality flags (TRUE = problem) ----
     DQ_DOB_INVALID               BOOLEAN NOT NULL DEFAULT FALSE,
@@ -70,8 +76,9 @@ CREATE TABLE IF NOT EXISTS DQ.QUARANTINE (
     PRIMARY KEY (QUARANTINE_ID)
 );
 
--- Compares each |H| row with the header of the sample file. The spec lists 11
--- fields; the sample header has 10 (no Post_Code). Loading never fails on this, so
+-- Compares each |H| row loaded by 01_raw.sql with the 11-field spec header, by position.
+-- The brief's 10-field sample header (no Post_Code) is handled by the Python parser,
+-- which maps columns by name, so it never reaches this check. Loading never fails on this, so
 -- a mismatch is reported here and the batch is stopped (HEADER_MISMATCH).
 CREATE OR REPLACE VIEW DQ.MEMBER_HEADER_CHECK AS
 SELECT FILE_NAME,
@@ -84,6 +91,7 @@ SELECT FILE_NAME,
         AND AGENT_NAME       = 'Agent_Name'
         AND STATE            = 'State'
         AND COUNTRY          = 'Country'
+        AND POST_CODE        = 'Post_Code'
         AND DATE_OF_BIRTH    = 'DOB'
         AND ACTIVE_MEMBER    = 'Is_Active') AS HEADER_OK
 FROM RAW.MEMBER_FEED_RAW

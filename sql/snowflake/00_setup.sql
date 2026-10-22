@@ -34,7 +34,7 @@ CREATE FILE FORMAT IF NOT EXISTS RAW.MEMBER_FEED_FORMAT
     TRIM_SPACE                     = FALSE        -- raw keeps the text exactly as received
     NULL_IF                        = ()           -- do NOT turn the text 'NULL' (seen in AUS DOB) into SQL NULL; staging decides
     EMPTY_FIELD_AS_NULL            = FALSE        -- blank stays '' in raw so blanks stay distinguishable from missing columns
-    ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE        -- sample has 10 fields, spec has 11: never reject at load, check the header in DQ
+    ERROR_ON_COLUMN_COUNT_MISMATCH = FALSE        -- never reject at load; the header is checked in DQ (11-field spec layout)
     ENCODING                       = 'UTF8';
 
 -- File format: redemption JSON. The file is one array of member objects; each
@@ -46,9 +46,10 @@ CREATE FILE FORMAT IF NOT EXISTS RAW.REDEMPTION_FEED_FORMAT
 
 -- -----------------------------------------------------------------------------
 -- External stage. Replace the URL and integration with your cloud bucket.
--- Expected layout:  members/members_<YYYYMMDDHH24MISS>.dat
---                   redemptions/redemptions_<YYYYMMDDHH24MISS>.json
--- The 14-digit timestamp in the file name becomes file_ts (ADR 0003).
+-- Expected layout:  members/SKYPOINTS_MEMBERS_<YYYYMMDD>_<HHMMSSTT>.dat
+--                   redemptions/<name containing YYYYMMDD_HHMMSSTT>.json
+-- The timestamp in the file name (pattern [0-9]{8}_[0-9]{8}, TT = hundredths of a
+-- second) becomes file_ts (ADR 0003).
 -- -----------------------------------------------------------------------------
 -- CREATE STORAGE INTEGRATION SKYPOINTS_S3_INT          -- needs ACCOUNTADMIN
 --     TYPE = EXTERNAL_STAGE

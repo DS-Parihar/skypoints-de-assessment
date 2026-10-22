@@ -70,9 +70,9 @@ def _add_raw(
 
 def _run(con: duckdb.DuckDBPyConnection, as_of: date = AS_OF, batch_id: str = "b1") -> None:
     quarantine_sql = (TRANSFORM_DIR / "10_quarantine_members.sql").read_text(encoding="utf-8")
-    stage_sql = (TRANSFORM_DIR / "11_stage_members.sql").read_text(encoding="utf-8")
+    stage_sql = (DEFAULT_DDL_DIR / "load_staging.sql").read_text(encoding="utf-8")
     con.execute(quarantine_sql, {"batch_id": batch_id})
-    con.execute(stage_sql, {"batch_id": batch_id, "as_of": as_of})
+    con.execute(stage_sql, {"batch_id": batch_id, "as_of_date": as_of})
 
 
 def _staged(con: duckdb.DuckDBPyConnection, column: str, member_id: str = "223457"):
@@ -248,11 +248,12 @@ def test_age_is_null_without_a_date_of_birth(con: duckdb.DuckDBPyConnection) -> 
         ("20231216", False),  # 30 days before as_of
         ("20231017", False),  # exactly 90 days before as_of
         ("20231016", True),  # 91 days before
-        ("", True),  # no flight date counts as stale
+        ("", None),  # no flight date: unknown, not stale
+        ("20240116", None),  # flight date after as_of: bad data, unknown
     ],
 )
-def test_stale_member_is_90_days_before_as_of(
-    con: duckdb.DuckDBPyConnection, last_flight: str, stale: bool
+def test_stale_member_is_more_than_90_days_before_as_of(
+    con: duckdb.DuckDBPyConnection, last_flight: str, stale: bool | None
 ) -> None:
     _add_raw(con, 2, last_flight_date=last_flight)
 

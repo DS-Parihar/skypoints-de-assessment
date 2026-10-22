@@ -38,8 +38,8 @@ WHEN NOT MATCHED THEN INSERT (RAW_COUNTRY_CODE, COUNTRY_CODE, COUNTRY_NAME)
      VALUES (s.RAW_COUNTRY_CODE, s.COUNTRY_CODE, s.COUNTRY_NAME);
 
 -- -----------------------------------------------------------------------------
--- CORE.MEMBER_CURRENT : exactly one row per MEMBER_ID (latest file_ts, then
--- file_row_number wins; ADR 0003). Same business columns as staging.
+-- CORE.MEMBER_CURRENT : exactly one row per MEMBER_KEY (latest file_ts, then
+-- file_row_number wins; ADR 0003). MEMBER_ID stays a plain column. Same business columns as staging.
 -- -----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS CORE.MEMBER_CURRENT (
     MEMBER_NAME      VARCHAR(255)  NOT NULL,
@@ -53,10 +53,12 @@ CREATE TABLE IF NOT EXISTS CORE.MEMBER_CURRENT (
     POST_CODE        VARCHAR(5),
     DATE_OF_BIRTH    DATE,
     ACTIVE_MEMBER    CHAR(1),
+    SOURCE_SYSTEM    VARCHAR(20)   NOT NULL,
+    MEMBER_KEY       VARCHAR(40)   NOT NULL,   -- source_system || ':' || member_id (ADR 0002): the merge key
     COUNTRY_CODE     CHAR(3),                  -- NULL -> the row lives in MART.MEMBERS_UNASSIGNED
     AS_OF_DATE       DATE          NOT NULL,
     AGE              NUMBER(3,0),
-    STALE_MEMBER     BOOLEAN       NOT NULL,
+    STALE_MEMBER     BOOLEAN,                  -- NULL = unknown (no usable flight date)
     DQ_DOB_INVALID               BOOLEAN NOT NULL DEFAULT FALSE,
     DQ_LAST_FLIGHT_DATE_INVALID  BOOLEAN NOT NULL DEFAULT FALSE,
     DQ_COUNTRY_UNKNOWN           BOOLEAN NOT NULL DEFAULT FALSE,
@@ -68,17 +70,18 @@ CREATE TABLE IF NOT EXISTS CORE.MEMBER_CURRENT (
     FILE_TS          TIMESTAMP_NTZ NOT NULL,
     BATCH_ID         VARCHAR       NOT NULL,
     UPDATED_AT       TIMESTAMP_NTZ NOT NULL DEFAULT CURRENT_TIMESTAMP(),   -- audit only
-    CONSTRAINT PK_MEMBER_CURRENT PRIMARY KEY (MEMBER_ID)    -- informational in Snowflake; the MERGE enforces it
+    CONSTRAINT PK_MEMBER_CURRENT PRIMARY KEY (MEMBER_KEY)    -- informational in Snowflake; the MERGE enforces it
 )
--- CLUSTER BY MEMBER_ID: the incremental MERGE joins on MEMBER_ID, so clustering lets Snowflake
+-- CLUSTER BY MEMBER_KEY: the incremental MERGE joins on MEMBER_KEY, so clustering lets Snowflake
 -- prune micro-partitions and touch only those holding the changed members instead of scanning
 -- a table with billions of rows. The key has high cardinality, which suits equality joins.
 -- Not clustered by COUNTRY_CODE: it has few values, so it would not prune MERGE lookups.
-CLUSTER BY (MEMBER_ID)
-COMMENT = 'One row per member, latest record wins';
+CLUSTER BY (MEMBER_KEY)
+COMMENT = 'One row per member_key, latest record wins';
 
 -- History of country moves: written when a member's country differs from the previous run.
 CREATE TABLE IF NOT EXISTS CORE.MEMBER_COUNTRY_HISTORY (
+    MEMBER_KEY         VARCHAR(40)   NOT NULL,
     MEMBER_ID          VARCHAR(18)   NOT NULL,
     OLD_COUNTRY_CODE   CHAR(3),
     NEW_COUNTRY_CODE   CHAR(3),
@@ -86,8 +89,8 @@ CREATE TABLE IF NOT EXISTS CORE.MEMBER_COUNTRY_HISTORY (
     BATCH_ID           VARCHAR       NOT NULL,
     RECORDED_AT        TIMESTAMP_NTZ NOT NULL DEFAULT CURRENT_TIMESTAMP()
 )
--- Append-only and read by MEMBER_ID: clustering keeps "history of one member" cheap.
-CLUSTER BY (MEMBER_ID)
+-- Append-only and read by MEMBER_KEY: clustering keeps "history of one member" cheap.
+CLUSTER BY (MEMBER_KEY)
 COMMENT = 'Member country changes; the old country table keeps no trace';
 
 -- -----------------------------------------------------------------------------
@@ -107,10 +110,10 @@ BEGIN
     FOR rec IN c DO
         LET tbl VARCHAR := 'MART.MEMBERS_' || rec.COUNTRY_CODE;
         EXECUTE IMMEDIATE 'CREATE TABLE IF NOT EXISTS ' || :tbl || ' LIKE CORE.MEMBER_CURRENT';
-        -- Country tables stay MEMBER_ID-clustered for the same reason as MEMBER_CURRENT: the
-        -- per-country MERGE and the delete-on-move join on MEMBER_ID. The country is constant
+        -- Country tables stay MEMBER_KEY-clustered for the same reason as MEMBER_CURRENT: the
+        -- per-country MERGE and the delete-on-move join on MEMBER_KEY. The country is constant
         -- inside one table, so clustering by it would add nothing.
-        EXECUTE IMMEDIATE 'ALTER TABLE ' || :tbl || ' CLUSTER BY (MEMBER_ID)';
+        EXECUTE IMMEDIATE 'ALTER TABLE ' || :tbl || ' CLUSTER BY (MEMBER_KEY)';
         n := n + 1;
     END FOR;
     RETURN n || ' country table(s) ensured';
@@ -121,4 +124,4 @@ CALL MART.CREATE_COUNTRY_TABLES();
 
 -- Members with no or an unmapped country. Never dropped (ADR 0006).
 CREATE TABLE IF NOT EXISTS MART.MEMBERS_UNASSIGNED LIKE CORE.MEMBER_CURRENT;
-ALTER TABLE MART.MEMBERS_UNASSIGNED CLUSTER BY (MEMBER_ID);
+ALTER TABLE MART.MEMBERS_UNASSIGNED CLUSTER BY (MEMBER_KEY);

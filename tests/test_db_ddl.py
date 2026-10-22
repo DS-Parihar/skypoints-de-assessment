@@ -147,6 +147,14 @@ def test_ddl_files_are_returned_in_numeric_order() -> None:
     ]
 
 
+def test_only_numbered_files_are_ddl(tmp_path: Path) -> None:
+    (tmp_path / "00_a.sql").write_text("SELECT 1;", encoding="utf-8")
+    (tmp_path / "load_staging.sql").write_text("SELECT $x;", encoding="utf-8")
+    (tmp_path / "notes.txt").write_text("-", encoding="utf-8")
+
+    assert [p.name for p in ddl_files(tmp_path)] == ["00_a.sql"]
+
+
 def test_ddl_files_rejects_a_missing_directory(tmp_path: Path) -> None:
     with pytest.raises(FileNotFoundError):
         ddl_files(tmp_path / "does_not_exist")

@@ -4,8 +4,10 @@
 -- Rules   : Every business column is unlimited VARCHAR so nothing is truncated
 --           or rejected at load; typing happens only in STAGING. Tables are
 --           append-only: CREATE ... IF NOT EXISTS, never OR REPLACE.
+-- member_key = source_system || ':' || member_id (ADR 0002). The .dat member feed is source
+-- system 'SKYPOINTS'; the IND/USA/AUS extracts use their own code.
 -- Metadata: file_name, file_row_number, file_ts, batch_id, loaded_at.
---           file_ts comes from the 14-digit timestamp in the FILE NAME, never
+--           file_ts comes from the YYYYMMDD_HHMMSSTT timestamp in the FILE NAME, never
 --           from now(); loaded_at is audit-only and never used in logic.
 -- =============================================================================
 
@@ -25,9 +27,11 @@ CREATE TABLE IF NOT EXISTS RAW.MEMBER_FEED_RAW (
     AGENT_NAME       VARCHAR,
     STATE            VARCHAR,
     COUNTRY          VARCHAR,          -- named COUNTRY, not the 'County' typo of the existing ETL
-    POST_CODE        VARCHAR,          -- NULL for the 10-field sample layout
+    POST_CODE        VARCHAR,          -- position 9 of the 11-field spec layout
     DATE_OF_BIRTH    VARCHAR,          -- feed header calls it DOB
     ACTIVE_MEMBER    VARCHAR,          -- feed header calls it Is_Active
+    SOURCE_SYSTEM    VARCHAR       NOT NULL,   -- 'SKYPOINTS' for the .dat feed; 'IND' / 'USA' / 'AUS' for the extracts
+    MEMBER_KEY       VARCHAR,          -- source_system || ':' || member_id; NULL for header rows and blank IDs
     FILE_NAME        VARCHAR       NOT NULL,
     FILE_ROW_NUMBER  NUMBER(38,0)  NOT NULL,
     FILE_TS          TIMESTAMP_NTZ,    -- NULL if the name has no timestamp; such rows are quarantined in staging
@@ -58,12 +62,13 @@ COMMENT = 'Raw redemption feed, one VARIANT per member object, append-only';
 -- Token positions in a member line (the leading pipe makes $1 empty):
 --   $1 ''  $2 record_type  $3 Member_Name  $4 Member_Id  $5 Enrollment_Date
 --   $6 Last_Flight_Date  $7 Tier_Code  $8 Agent_Name  $9 State  $10 Country
---   SAMPLE layout (10 fields):  $11 DOB          $12 Is_Active
---   SPEC layout   (11 fields):  $11 Post_Code    $12 Date of Birth  $13 Active Member
--- DEVIATION from the spec: the sample has no Post_Code, so POST_CODE is loaded
--- as NULL and DOB is read from $11. When the owner confirms the spec layout,
--- change the SELECT to the SPEC tokens (see the comment inside). A wrong layout
--- is caught by DQ.MEMBER_HEADER_CHECK in 02_staging.sql.
+--   $11 Post_Code  $12 Date of Birth (DOB)  $13 Active Member (Is_Active)
+-- 11-field SPEC layout, read by position. A header that does not match is caught by
+-- DQ.MEMBER_HEADER_CHECK in 02_staging.sql.
+-- NOTE: the brief's 10-field SAMPLE header (no Post_Code) is NOT loaded by this SQL. It is
+-- handled by the Python parser (skypoints.ingest.flat_file), which maps columns by header
+-- NAME, fills the missing optional column with '' and returns a warning. This SQL assumes
+-- the 11-field SPEC layout, by position.
 -- -----------------------------------------------------------------------------
 CREATE OR REPLACE PROCEDURE RAW.LOAD_MEMBER_FEED(BATCH_ID VARCHAR)
 RETURNS VARCHAR
@@ -74,15 +79,17 @@ BEGIN
     EXECUTE IMMEDIATE
     'COPY INTO RAW.MEMBER_FEED_RAW
        (RECORD_TYPE, MEMBER_NAME, MEMBER_ID, ENROLLMENT_DATE, LAST_FLIGHT_DATE, TIER_CODE,
-        AGENT_NAME, STATE, COUNTRY, POST_CODE, DATE_OF_BIRTH, ACTIVE_MEMBER,
+        AGENT_NAME, STATE, COUNTRY, POST_CODE, DATE_OF_BIRTH, ACTIVE_MEMBER, SOURCE_SYSTEM, MEMBER_KEY,
         FILE_NAME, FILE_ROW_NUMBER, FILE_TS, BATCH_ID, LOADED_AT)
      FROM (
        SELECT $2, $3, $4, $5, $6, $7, $8, $9, $10,
-              NULL,
-              $11, $12,
+              $11, $12, $13,
+              ''SKYPOINTS'',
+              CASE WHEN $2 = ''D'' AND NULLIF(TRIM($4), '''') IS NOT NULL
+                   THEN ''SKYPOINTS:'' || TRIM($4) END,
               METADATA$FILENAME,
               METADATA$FILE_ROW_NUMBER,
-              TRY_TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(METADATA$FILENAME, ''[0-9]{14}''), ''YYYYMMDDHH24MISS''),
+              TRY_TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(METADATA$FILENAME, ''[0-9]{8}_[0-9]{8}''), ''YYYYMMDD_HH24MISSFF2''),
               ''' || :BATCH_ID || ''',
               CURRENT_TIMESTAMP()
        FROM @RAW.LANDING_STAGE/members/
@@ -90,7 +97,6 @@ BEGIN
      FILE_FORMAT = (FORMAT_NAME = ''RAW.MEMBER_FEED_FORMAT'')
      PATTERN     = ''.*[.]dat''
      ON_ERROR    = ''CONTINUE''';
-    -- For the SPEC layout, replace "NULL, $11, $12" with "$11, $12, $13".
     -- ON_ERROR CONTINUE never aborts the load; file-level rejects are listed by COPY_HISTORY / VALIDATE.
     RETURN 'member feed loaded, batch ' || :BATCH_ID;
 END;
@@ -109,7 +115,7 @@ BEGIN
        SELECT $1,
               METADATA$FILENAME,
               METADATA$FILE_ROW_NUMBER,
-              TRY_TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(METADATA$FILENAME, ''[0-9]{14}''), ''YYYYMMDDHH24MISS''),
+              TRY_TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(METADATA$FILENAME, ''[0-9]{8}_[0-9]{8}''), ''YYYYMMDD_HH24MISSFF2''),
               ''' || :BATCH_ID || ''',
               CURRENT_TIMESTAMP()
        FROM @RAW.LANDING_STAGE/redemptions/
@@ -134,12 +140,13 @@ $$;
 -- CREATE PIPE IF NOT EXISTS RAW.MEMBER_FEED_PIPE AUTO_INGEST = TRUE AS
 --   COPY INTO RAW.MEMBER_FEED_RAW
 --     (RECORD_TYPE, MEMBER_NAME, MEMBER_ID, ENROLLMENT_DATE, LAST_FLIGHT_DATE, TIER_CODE,
---      AGENT_NAME, STATE, COUNTRY, POST_CODE, DATE_OF_BIRTH, ACTIVE_MEMBER,
+--      AGENT_NAME, STATE, COUNTRY, POST_CODE, DATE_OF_BIRTH, ACTIVE_MEMBER, SOURCE_SYSTEM, MEMBER_KEY,
 --      FILE_NAME, FILE_ROW_NUMBER, FILE_TS, BATCH_ID, LOADED_AT)
 --   FROM (
---     SELECT $2,$3,$4,$5,$6,$7,$8,$9,$10, NULL, $11,$12,
+--     SELECT $2,$3,$4,$5,$6,$7,$8,$9,$10, $11,$12,$13,
+--            'SKYPOINTS', CASE WHEN $2='D' AND NULLIF(TRIM($4),'') IS NOT NULL THEN 'SKYPOINTS:'||TRIM($4) END,
 --            METADATA$FILENAME, METADATA$FILE_ROW_NUMBER,
---            TRY_TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(METADATA$FILENAME,'[0-9]{14}'),'YYYYMMDDHH24MISS'),
+--            TRY_TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(METADATA$FILENAME,'[0-9]{8}_[0-9]{8}'),'YYYYMMDD_HH24MISSFF2'),
 --            METADATA$FILENAME, CURRENT_TIMESTAMP()
 --     FROM @RAW.LANDING_STAGE/members/
 --   )
@@ -150,7 +157,7 @@ $$;
 --   COPY INTO RAW.REDEMPTION_FEED_RAW (PAYLOAD, FILE_NAME, FILE_ROW_NUMBER, FILE_TS, BATCH_ID, LOADED_AT)
 --   FROM (
 --     SELECT $1, METADATA$FILENAME, METADATA$FILE_ROW_NUMBER,
---            TRY_TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(METADATA$FILENAME,'[0-9]{14}'),'YYYYMMDDHH24MISS'),
+--            TRY_TO_TIMESTAMP_NTZ(REGEXP_SUBSTR(METADATA$FILENAME,'[0-9]{8}_[0-9]{8}'),'YYYYMMDD_HH24MISSFF2'),
 --            METADATA$FILENAME, CURRENT_TIMESTAMP()
 --     FROM @RAW.LANDING_STAGE/redemptions/
 --   )

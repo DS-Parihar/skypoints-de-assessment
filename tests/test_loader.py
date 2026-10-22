@@ -207,8 +207,8 @@ def test_a_loaded_file_flows_through_the_staging_sql(con) -> None:
 
     con.execute((TRANSFORM_DIR / "10_quarantine_members.sql").read_text(), {"batch_id": "b1"})
     con.execute(
-        (TRANSFORM_DIR / "11_stage_members.sql").read_text(),
-        {"batch_id": "b1", "as_of": date(2024, 1, 15)},
+        (DEFAULT_DDL_DIR / "load_staging.sql").read_text(),
+        {"batch_id": "b1", "as_of_date": date(2024, 1, 15)},
     )
 
     staged = con.execute(
