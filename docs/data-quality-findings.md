@@ -36,8 +36,20 @@ What I found after profiling every file in `data/raw` (see `scripts/profile_sour
 ## Redemptions JSON
 
 - Clean in the sample: dates are YYYYMMDD, statuses are COMPLETED / PENDING.
-- Member `1` appears in the JSON, and ID 1 also exists in IND, USA and AUS. A redemption can't be matched to one person without knowing the source.
-- Not checked yet: duplicate transaction IDs, negative miles, unknown statuses, transaction dates after the feed date, members with no profile.
+- A redemption for member `1` (kept as the fixture `tests/fixtures/redemptions/member_1_orphan/`) shows the ID problem: ID 1 also exists in IND, USA and AUS, so a bare `member_id` can't be matched to one person. Redemptions are joined to the member feed by `member_key` (`SKYPOINTS:<id>`), and one with no matching member is an orphan.
+- Every other check is now a rule (`RD001` to `RD006`), applied when the feed is loaded. Rules are in `sql/duckdb/transform/45_stage_redemptions.sql` (Snowflake: `sql/snowflake/06_redemptions.sql`) and described at the top of `src/skypoints/ingest/redemptions.py`; each one has tests in `tests/integration/test_redemption_load.py`.
+
+| Rule | Problem | What it does |
+|---|---|---|
+| `RD001` | Member with an empty `redemptions` array | No rows, but the member is recorded as a warning (`DQ.ROW_FINDING`) and kept in raw |
+| `RD002` | Duplicate transaction ID | The newest version (feed date, then file time, then position) is kept; the older one goes to `DQ.QUARANTINE` as `DUPLICATE_TXN_OLDER`, never dropped silently |
+| `RD003` | Negative `miles_redeemed` | Row quarantined with its original values; not staged |
+| `RD004` | Status that is not `COMPLETED` or `PENDING` | Row quarantined; the allowed statuses are config (`RedemptionConfig`) |
+| `RD005` | `txn_date` after `feed_date` | Warning only; the row is staged with `dq_txn_after_feed` set |
+| `RD006` | A required value missing or unreadable (member ID, transaction ID, a date, miles) | Row quarantined |
+
+- Members with no profile: not a rejection. The redemption is kept, and `MART.MEMBER_REDEMPTION_SUMMARY` shows it with `member_matched = false` (tested in `tests/integration/test_redemption_summary.py`).
+- A row that breaks several reject rules is quarantined once, with all its rule codes.
 
 ## How I'll handle the dates
 
