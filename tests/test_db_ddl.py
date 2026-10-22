@@ -70,6 +70,10 @@ EXPECTED_COLUMNS: dict[tuple[str, str], list[str]] = {
         "reject_reason",
         *LINEAGE,
         "raw_payload",
+        "enrollment_date_txt",
+        "last_flight_date_txt",
+        "date_of_birth_txt",
+        "post_code_txt",
     ],
     ("core", "member_country_history"): [
         "member_key",
@@ -121,6 +125,24 @@ EXPECTED_COLUMNS: dict[tuple[str, str], list[str]] = {
 }
 
 
+# Objects of the rule engine (sql/duckdb/05_validations.sql): work tables, config tables, views.
+RULE_VIEWS = [f"v_dq{n:03d}" for n in range(1, 18)]
+VALIDATION_OBJECTS = {
+    ("dq", name)
+    for name in [
+        "rule_param", "rule_input", "rule_header", "rule_counts", "rule_column_counts",
+        "cfg_tier", "cfg_active", "cfg_country_map", "cfg_max_length", "cfg_date_format",
+        "cfg_header_column", "v_rule_row", "v_rule_date", "v_row_findings", "v_findings",
+        "v_failed_file", "v_row_reject", "v_accepted_row", "v_run_findings", "work_finding",
+        "work_date", *RULE_VIEWS,
+    ]
+}  # fmt: skip
+FINDING_COLUMNS = [
+    "rule_code", "severity", "reason", "batch_id", "file_name", "file_row_number",
+    "member_key", "column_name", "value",
+]  # fmt: skip
+
+
 def _columns(con: duckdb.DuckDBPyConnection, schema: str, table: str) -> list[str]:
     rows = con.execute(
         "SELECT lower(column_name) FROM information_schema.columns "
@@ -160,6 +182,7 @@ def test_ddl_files_are_returned_in_numeric_order() -> None:
         "02_staging.sql",
         "03_targets.sql",
         "04_member_prepared.sql",
+        "05_validations.sql",
     ]
 
 
@@ -192,7 +215,7 @@ def test_no_unexpected_tables(con: duckdb.DuckDBPyConnection) -> None:
         ).fetchall()
     }
 
-    assert found == set(EXPECTED_COLUMNS)
+    assert found == set(EXPECTED_COLUMNS) | VALIDATION_OBJECTS
 
 
 def test_raw_business_columns_are_all_text(con: duckdb.DuckDBPyConnection) -> None:
@@ -302,3 +325,20 @@ def test_member_id_alone_is_not_unique_in_member_current() -> None:
     with pytest.raises(duckdb.ConstraintException):
         connection.execute(row.format(sys="USA"))  # same member_key twice: rejected
     connection.close()
+
+
+@pytest.mark.parametrize("view", [*RULE_VIEWS, "v_findings", "v_row_findings"])
+def test_every_rule_view_returns_the_same_nine_finding_columns(
+    con: duckdb.DuckDBPyConnection, view: str
+) -> None:
+    assert _columns(con, "dq", view) == FINDING_COLUMNS
+
+
+def test_the_header_layout_is_seeded_with_three_mandatory_columns(
+    con: duckdb.DuckDBPyConnection,
+) -> None:
+    rows = con.execute(
+        "SELECT column_name FROM dq.cfg_header_column WHERE is_mandatory ORDER BY 1"
+    ).fetchall()
+
+    assert rows == [("Enrollment_Date",), ("Member_Id",), ("Member_Name",)]

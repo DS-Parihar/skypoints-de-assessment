@@ -57,7 +57,7 @@ def test_a_reject_row_goes_to_quarantine_with_batch_rule_reason_severity_and_raw
     assert (batch_id, rule_code, severity) == ("b1", "DQ001", "REJECT")
     assert "member_name" in reason
     assert (file_name, row_number) == (FILE_A, 2)
-    raw = json.loads(payload)
+    raw = {key.lower(): value for key, value in json.loads(payload).items()}
     assert raw["member_name"] == ""  # the original raw values, untouched
     assert raw["member_id"] == " 223457 "  # not trimmed
     assert raw["enrollment_date"] == "20101012"
@@ -162,7 +162,9 @@ def test_an_invalid_optional_date_becomes_null_in_staging_with_a_warning(con, ad
 
 
 def test_an_ambiguous_date_becomes_null_in_staging_with_a_warning(con, add_raw) -> None:
-    add_raw(2, source_system="USA", member_id="1", last_flight_date="1052022")
+    add_raw(
+        2, source_system="USA", member_id="1", enrollment_date="6152022", last_flight_date="1052022"
+    )
 
     run_quality(con, "b1", AS_OF)
 
