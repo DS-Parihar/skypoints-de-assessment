@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+
+# Test / tooling caches
+.pytest_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# VS Code
+.vscode/
+
+# Local DuckDB databases
+*.duckdb
+*.duckdb.wal
+
+# Processed outputs (data/raw stays tracked)
+data/processed/*
+!data/processed/.gitkeep

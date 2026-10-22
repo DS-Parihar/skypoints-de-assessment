@@ -1,0 +1,13 @@
+[project]
+name = "skypoints"
+version = "0.1.0"
+description = "SkyPoints member & redemption pipeline"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
