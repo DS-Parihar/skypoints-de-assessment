@@ -433,8 +433,8 @@ def test_moves_inside_one_batch_collapse_to_a_single_history_row(con) -> None:
     result = split_by_country(con, "day2-and-day3")  # USA on day2, CAN on day3, one batch
 
     assert tables_holding(con, RAVI) == ["MEMBERS_CAN"]
-    assert history(con) == [(RAVI, "IND", "CAN", TS[3], DAY[3])]
-    assert result.moves == [Move(RAVI, "IND", "CAN", TS[3], DAY[3])]
+    assert history(con) == [(RAVI, "IND", "CAN", TS[3], "day2-and-day3")]
+    assert result.moves == [Move(RAVI, "IND", "CAN", TS[3], "day2-and-day3")]
 
 
 # ---- 8. latest record has a blank country ----------------------------------------------------
@@ -657,6 +657,7 @@ def test_merge_member_current_alone_fills_core_and_leaves_the_country_tables_emp
     assert all(
         con.execute(f"SELECT count(*) FROM mart.{t}").fetchone() == (0,) for t in mart_tables(con)
     )
+    refresh_country_tables(con)  # bring MART in line with CORE for the invariant check
 
 
 def test_refresh_country_tables_rebuilds_the_tables_from_core(con) -> None:

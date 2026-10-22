@@ -1,0 +1,15 @@
+[
+  {
+    "member_id": "007890",
+    "feed_date": "20240115",
+    "redemptions": [
+      {
+        "txn_id": "RX10091",
+        "txn_date": "20240110",
+        "partner": "AeroLink",
+        "miles_redeemed": 12000,
+        "status": "COMPLETED"
+      }
+    ]
+  }
+]

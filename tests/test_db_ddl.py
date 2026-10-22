@@ -97,6 +97,11 @@ EXPECTED_COLUMNS: dict[tuple[str, str], list[str]] = {
         "raw_payload",
         "quarantined_at",
     ],
+    ("staging", "redemption_stg"): [
+        "member_id", "member_key", "feed_date", "txn_id", "txn_date", "partner", "miles_redeemed",
+        "status", "dq_txn_after_feed", "file_name", "file_row_number", "txn_seq", "file_ts",
+        "batch_id", "staged_at",
+    ],
     ("dq", "row_finding"): [
         "finding_id",
         "batch_id",
