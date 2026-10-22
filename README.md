@@ -55,6 +55,73 @@ pytest -q --cov=src --cov-fail-under=80
 ruff check . && ruff format --check .
 ```
 
+## Results: what a run produces
+
+No need to run anything to see it. The run below is `python -m skypoints.pipeline --as-of 2024-01-15`
+on the files in `data/raw`; its output is committed in [`data/processed/export/`](data/processed/export/).
+
+```
+SkyPoints pipeline run report
+as of 2024-01-15
+
+== Files ==
+  AUS.xlsx  [country extract]  loaded
+  IND.csv  [country extract]  loaded
+  README.md  [unknown]  skipped  - no matching feed rule
+  SKYPOINTS_MEMBERS_20240115_00000000.dat  [members]  loaded
+  USA.csv  [country extract]  loaded
+  redemptions.json  [redemptions]  loaded
+
+== Rows per layer ==
+  RAW member rows: 14
+  STAGING members: 12
+  Quarantined member rows: 2
+  Rows in failed files: 0
+  CORE members: 12
+  RAW redemption members: 1
+  RAW redemption transactions: 2
+  STAGING redemptions: 2
+  Quarantined redemption rows: 0
+  CORE redemption transactions: 2
+
+== Rows per country table ==
+  MEMBERS_AUS: 3
+  MEMBERS_CAN: 1
+  MEMBERS_IND: 4
+  MEMBERS_PHL: 1
+  MEMBERS_UNASSIGNED: 0
+  MEMBERS_USA: 3
+
+== DQ summary by rule ==
+  DQ003: 2
+  DQ013: 9
+  DQ014: 1
+  DQ017: 2
+
+== Quarantined rows ==
+  RAW.MEMBER_FEED_RAW  AUS.xlsx  row 3  DQ003  DQ003
+  RAW.MEMBER_FEED_RAW  USA.csv  row 3  DQ003  DQ003
+
+== Other ==
+  Country moves recorded: 0
+  Orphan redemption members: 0
+```
+
+| File in `data/processed/export/` | What it shows |
+|---|---|
+| [`members.csv`](data/processed/export/members.csv) | The 12 current members, with Age and Stale_Member |
+| `members_<iso3>.csv` ([IND](data/processed/export/members_ind.csv), [USA](data/processed/export/members_usa.csv), ...) | Members per country table; `members_unassigned.csv` for unknown countries |
+| [`quarantine.csv`](data/processed/export/quarantine.csv) | The 2 rejected rows, with the rule, the reason and the original values |
+| [`dq_findings.csv`](data/processed/export/dq_findings.csv), [`dq_summary.csv`](data/processed/export/dq_summary.csv) | The 12 warnings, and how many rows each rule caught |
+| [`redemptions.csv`](data/processed/export/redemptions.csv), [`redemption_summary.csv`](data/processed/export/redemption_summary.csv) | The flattened transactions, and miles per member (orphans included) |
+| [`member_country_history.csv`](data/processed/export/member_country_history.csv) | Every country move (empty here: `data/raw` has no move) |
+| [`demo_queries_output.txt`](data/processed/export/demo_queries_output.txt) | The 12 demo queries as tables |
+| [`run_report.txt`](data/processed/export/run_report.txt) | The report above |
+
+The move itself, "latest record wins", is shown on two small files in
+[docs/sample-run-latest-wins.md](docs/sample-run-latest-wins.md): a member in India on day 1 is only in
+the USA table after day 2, with one history row.
+
 ## Deliverables
 
 | Deliverable | Where |
