@@ -83,10 +83,11 @@ def _sql(name: str) -> str:
     return (TRANSFORM_DIR / name).read_text(encoding="utf-8")
 
 
-def _checked(path: str | Path) -> tuple[Path, datetime]:
-    """Validate the file name first (no file is opened for a bad name), then that the file exists."""
+def _checked(path: str | Path, file_ts: datetime | None = None) -> tuple[Path, datetime]:
+    """Validate the file name first (no file is opened for a bad name), then that the file exists.
+    A file_ts given by the caller (from the source manifest) replaces the one in the name."""
     path = Path(path)
-    file_ts = parse_feed_file_ts(path.name, "REDEMPTIONS", "json")
+    file_ts = file_ts or parse_feed_file_ts(path.name, "REDEMPTIONS", "json")
     if not path.is_file():
         raise FileNotFoundError(path)
     return path, file_ts
@@ -95,18 +96,29 @@ def _checked(path: str | Path) -> tuple[Path, datetime]:
 def _members(con: duckdb.DuckDBPyConnection) -> list[MemberEntry]:
     return [
         MemberEntry(str(member_id), feed_date, count, row_number)
-        for member_id, feed_date, count, row_number in con.execute(_sql("43_redemption_members.sql")).fetchall()
+        for member_id, feed_date, count, row_number in con.execute(
+            _sql("43_redemption_members.sql")
+        ).fetchall()
     ]
 
 
-def flatten_redemption_feed(path: str | Path) -> FlatFeed:
-    """Parse the feed. No typing, no validation: every value is text, file metadata is attached."""
-    path, file_ts = _checked(path)
+def flatten_redemption_feed(
+    path: str | Path, file_ts: datetime | None = None, default_feed_date: str | None = None
+) -> FlatFeed:
+    """Parse the feed. No typing, no validation: every value is text, file metadata is attached.
+    file_ts and default_feed_date come from the source manifest for a file not named like a feed."""
+    path, file_ts = _checked(path, file_ts)
     con = duckdb.connect()  # parsing needs no database tables
     try:
         con.execute(
             _sql("40_redemption_member_from_file.sql"),
-            {"file": str(path), "file_name": path.name, "file_ts": file_ts, "batch_id": None},
+            {
+                "file": str(path),
+                "file_name": path.name,
+                "file_ts": file_ts,
+                "batch_id": None,
+                "default_feed_date": default_feed_date,
+            },
         )
         con.execute(_sql("42_redemption_flatten.sql"))
         columns = ", ".join(_ROW_COLUMNS)
@@ -126,10 +138,12 @@ def load_redemption_feed(
     path: str | Path,
     batch_id: str,
     config: RedemptionConfig | None = None,
+    file_ts: datetime | None = None,
+    default_feed_date: str | None = None,
 ) -> RedemptionLoadResult:
     """Raw -> flatten -> validate -> STAGING.REDEMPTION_STG, applying RD001..RD006. A file name
     that is already in raw is skipped (raw is append-only); the load is all-or-nothing."""
-    path, file_ts = _checked(path)
+    path, file_ts = _checked(path, file_ts)
     config = config or RedemptionConfig()
     already = con.execute(
         "SELECT count(*) FROM raw.redemption_feed_raw WHERE file_name = ?", [path.name]
@@ -142,7 +156,10 @@ def load_redemption_feed(
             _sql("44_load_redemption_raw.sql"),
             {"file": str(path), "file_name": path.name, "file_ts": file_ts, "batch_id": batch_id},
         )
-        con.execute(_sql("41_redemption_member_from_raw.sql"), {"file_name": path.name})
+        con.execute(
+            _sql("41_redemption_member_from_raw.sql"),
+            {"file_name": path.name, "default_feed_date": default_feed_date},
+        )
         con.execute(_sql("42_redemption_flatten.sql"))
         members = _members(con)
         con.execute("CREATE OR REPLACE TEMP TABLE _redemption_status (STATUS VARCHAR)")
@@ -164,7 +181,9 @@ def load_redemption_feed(
     )
 
 
-def promote_redemptions(con: duckdb.DuckDBPyConnection, batch_id: str | None = None) -> PromoteResult:
+def promote_redemptions(
+    con: duckdb.DuckDBPyConnection, batch_id: str | None = None
+) -> PromoteResult:
     """STAGING.REDEMPTION_STG -> CORE.REDEMPTION_TXN (batch_id=None: all staged rows). A row
     replaces the CORE row only if strictly newer; re-running changes nothing."""
     with atomic(con):

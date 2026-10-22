@@ -63,7 +63,9 @@ class InvalidFileNameError(ValueError):
 def parse_feed_file_ts(file_name: str, feed: str, extension: str) -> datetime:
     """Return the timestamp in SKYPOINTS_<feed>_YYYYMMDD_HHMMSSTT.<extension>; TT is hundredths
     of a second. Raises InvalidFileNameError for any other name."""
-    pattern = re.compile(rf"SKYPOINTS_{feed}_(\d{{8}})_(\d{{2}})(\d{{2}})(\d{{2}})(\d{{2}})\.{extension}")
+    pattern = re.compile(
+        rf"SKYPOINTS_{feed}_(\d{{8}})_(\d{{2}})(\d{{2}})(\d{{2}})(\d{{2}})\.{extension}"
+    )
     match = pattern.fullmatch(file_name)
     if match is None:
         raise InvalidFileNameError(

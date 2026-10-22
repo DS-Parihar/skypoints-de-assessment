@@ -32,13 +32,20 @@ _LOAD_INPUT = (
 )
 
 
-def _config_from_ref(con: duckdb.DuckDBPyConnection) -> QualityConfig:
+def config_from_ref(
+    con: duckdb.DuckDBPyConnection, date_formats: dict[str, dict[str, str]] | None = None
+) -> QualityConfig:
     """Default config whose country map is REF.COUNTRY_CODE_MAP, so a country added to the table
-    is resolved without a code change. An empty table keeps the built-in map."""
+    is resolved without a code change (an empty table keeps the built-in map). date_formats are
+    added to, or replace, the built-in formats per source system (from the source manifest)."""
     rows = con.execute(
         "SELECT raw_country_code, country_code FROM ref.country_code_map WHERE is_active"
     ).fetchall()
-    return QualityConfig(country_map=dict(rows)) if rows else QualityConfig()
+    base = QualityConfig()
+    return QualityConfig(
+        country_map=dict(rows) if rows else base.country_map,
+        date_formats={**base.date_formats, **(date_formats or {})},
+    )
 
 
 def _script(name: str) -> str:
@@ -56,7 +63,7 @@ def run_quality(
     Re-running a batch replaces its findings and summary and adds no duplicate quarantine
     or staging rows."""
     engine.clear_work_tables(con)
-    engine.load_config(con, config or _config_from_ref(con), as_of, batch_id)
+    engine.load_config(con, config or config_from_ref(con), as_of, batch_id)
     con.execute(_LOAD_INPUT, [batch_id])
     if headers:
         engine.load_headers(con, headers, batch_id)
@@ -87,12 +94,15 @@ def _summary(con: duckdb.DuckDBPyConnection, batch_id: str) -> RunSummary:
         ).fetchall()
     )
     failed_files = tuple(
-        row[0] for row in con.execute("SELECT file_name FROM dq.v_failed_file ORDER BY 1").fetchall()
+        row[0]
+        for row in con.execute("SELECT file_name FROM dq.v_failed_file ORDER BY 1").fetchall()
     )
     return RunSummary(
         batch_id=batch_id,
         rows_read=scalar("SELECT count(*) FROM dq.rule_input"),
-        rows_staged=scalar("SELECT count(*) FROM staging.member_stg WHERE batch_id = ?", [batch_id]),
+        rows_staged=scalar(
+            "SELECT count(*) FROM staging.member_stg WHERE batch_id = ?", [batch_id]
+        ),
         rows_rejected=scalar("SELECT count(*) FROM dq.v_row_reject"),
         findings_by_rule=by_rule,
         failed_files=failed_files,

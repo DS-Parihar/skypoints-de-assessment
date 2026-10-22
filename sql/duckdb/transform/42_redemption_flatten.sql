@@ -9,7 +9,7 @@
 -- =============================================================================
 CREATE OR REPLACE TEMP TABLE _redemption_flat AS
 WITH members AS (
-    SELECT FILE_NAME, FILE_ROW_NUMBER, FILE_TS, BATCH_ID, PAYLOAD,
+    SELECT FILE_NAME, FILE_ROW_NUMBER, FILE_TS, BATCH_ID, PAYLOAD, DEFAULT_FEED_DATE,
            CAST(json_extract(PAYLOAD, '$.redemptions') AS JSON[]) AS ARR
     FROM _redemption_member
 ),
@@ -17,7 +17,7 @@ exploded AS (
     SELECT m.*, unnest(m.ARR) AS TXN, generate_subscripts(m.ARR, 1) AS TXN_SEQ FROM members m
 )
 SELECT json_extract_string(PAYLOAD, '$.member_id')   AS MEMBER_ID,
-       json_extract_string(PAYLOAD, '$.feed_date')   AS FEED_DATE,
+       COALESCE(json_extract_string(PAYLOAD, '$.feed_date'), DEFAULT_FEED_DATE) AS FEED_DATE,
        json_extract_string(TXN, '$.txn_id')          AS TXN_ID,
        json_extract_string(TXN, '$.txn_date')        AS TXN_DATE,
        json_extract_string(TXN, '$.partner')         AS PARTNER,

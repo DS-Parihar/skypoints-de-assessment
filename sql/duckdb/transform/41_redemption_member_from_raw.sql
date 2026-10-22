@@ -2,9 +2,10 @@
 -- 41_redemption_member_from_raw.sql  (DuckDB)
 -- Purpose : Same temp table as 40, but read from RAW.REDEMPTION_FEED_RAW, the stored VARIANT
 --           (JSON in DuckDB), so staging is built from raw and not from the file again.
--- Params  : $file_name
+-- Params  : $file_name, $default_feed_date
 -- =============================================================================
 CREATE OR REPLACE TEMP TABLE _redemption_member AS
-SELECT FILE_NAME, FILE_ROW_NUMBER, FILE_TS, BATCH_ID, PAYLOAD
+SELECT FILE_NAME, FILE_ROW_NUMBER, FILE_TS, BATCH_ID, PAYLOAD,
+       CAST($default_feed_date AS VARCHAR) AS DEFAULT_FEED_DATE
 FROM RAW.REDEMPTION_FEED_RAW
 WHERE FILE_NAME = CAST($file_name AS VARCHAR);

@@ -5,7 +5,7 @@
 --           recorded. Reads _redemption_member.
 -- =============================================================================
 SELECT json_extract_string(PAYLOAD, '$.member_id')  AS MEMBER_ID,
-       json_extract_string(PAYLOAD, '$.feed_date')  AS FEED_DATE,
+       COALESCE(json_extract_string(PAYLOAD, '$.feed_date'), DEFAULT_FEED_DATE) AS FEED_DATE,
        COALESCE(json_array_length(json_extract(PAYLOAD, '$.redemptions')), 0) AS REDEMPTION_COUNT,
        FILE_ROW_NUMBER
 FROM _redemption_member

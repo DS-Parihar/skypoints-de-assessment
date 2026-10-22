@@ -92,7 +92,9 @@ def _merge(con: duckdb.DuckDBPyConnection, batch_id: str | None) -> MergeResult:
             + ", ".join(f"{key} ({n} records)" for key, _, _, n in conflicts)
         )
     con.execute(_sql("32_merge_member_current.sql"))
-    counts = dict(con.execute("SELECT action, count(*) FROM _split_decision GROUP BY action").fetchall())
+    counts = dict(
+        con.execute("SELECT action, count(*) FROM _split_decision GROUP BY action").fetchall()
+    )
     moves = [
         Move(key, old, new, moved_at, batch)
         for key, old, new, moved_at, batch in con.execute(
@@ -146,7 +148,9 @@ def _refresh(con: duckdb.DuckDBPyConnection) -> dict[str, int]:
     }
 
 
-def merge_member_current(con: duckdb.DuckDBPyConnection, batch_id: str | None = None) -> MergeResult:
+def merge_member_current(
+    con: duckdb.DuckDBPyConnection, batch_id: str | None = None
+) -> MergeResult:
     """STAGING.MEMBER_STG -> CORE.MEMBER_CURRENT. batch_id=None means all staging rows."""
     _check_not_blocked(con, batch_id)
     with atomic(con):
