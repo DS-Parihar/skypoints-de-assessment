@@ -1,196 +1,201 @@
 # Architecture
 
-Daily pipe-delimited member feed + JSON redemption feed -> per-country member tables, a flattened
-redemptions table, and a quarantine table. Production target is Snowflake (`sql/snowflake`); the
-runnable local target is DuckDB (`sql/duckdb`, `src/skypoints`). Both implement the same layers and
-the same rules, so the DuckDB run is a working model of the Snowflake design.
+Daily pipe-delimited member feed + JSON redemption feed (+ three country extracts) -> per-country
+member tables, a flattened redemption table, a member redemption summary, a quarantine table with
+reason codes, and a data-quality report. Production target is Snowflake (`sql/snowflake/`); the
+runnable local target is DuckDB (`sql/duckdb/`, `src/skypoints/`). Both implement the same layers
+and the same rules. The DuckDB version is what the tests run; the Snowflake SQL is the production
+design and is reviewed, not executed, here (ADR 0001).
 
-## Decisions taken (from review)
+## Decisions in one table
 
-| Question | Decision |
-|---|---|
-| Member identity | `member_id` alone. IND/USA/AUS sample files are extra sources of the same feed; their ID collisions are a logged DQ finding, not modelled. |
-| Latest record | Highest `file_ts`, then highest `file_row_number`. |
-| Member moves country | Row is deleted from the old country table; move history is kept in `member_country_history`. |
-| Redemption re-sent | Latest status wins per `txn_id` (by `feed_date`, then arrival order). Redemptions with no matching member are kept with `member_matched = false` and also flagged in quarantine. |
-
-Assumptions carried over from `notes/initial-understanding.md`: DOB is month-first; unreadable or
-ambiguous dates become NULL and are flagged, never guessed; blank/unknown country goes to
-`member_unassigned`; every date calculation takes an explicit `as_of`.
+| Question | Decision | ADR |
+|---|---|---|
+| Business key | `member_key = source_system:member_id`, not Member Name and not the bare `member_id` | 0002 |
+| "Latest" record | Highest `file_ts` (from the file name), then `file_row_number`; replaces the current row only if **strictly** newer | 0003 |
+| Member changes country | `member_current` is updated; country tables are rebuilt from it, so the member leaves the old table | 0004 |
+| Dates | DOB assumed MMDDYYYY; ambiguous or invalid dates become NULL plus a finding, never guessed | 0005 |
+| Country routing | Config-driven (`REF.COUNTRY_CODE_MAP`); unknown or blank country goes to `MEMBERS_UNASSIGNED` | 0006 |
+| One table per country | Delivered as asked; the cheaper alternative at scale is described | 0007 |
+| Redemption feed format | A JSON array is read today; line-delimited JSON is the recommendation at scale | 0008 |
 
 ## Layers
 
-| Layer | Tables | Contents | Rule |
+| Layer | Objects | Contents | Rule |
 |---|---|---|---|
-| Landing / raw | `raw_member`, `raw_redemption` | Every field `VARCHAR` (redemptions: one `VARIANT` per file record) plus load metadata | Append-only, never altered |
-| Staging | `stg_member`, `stg_redemption` | Typed columns, derived `age` and `stale_member`, DQ flags | Typing happens only here |
-| Conformed | `member_current`, `member_country_history`, `redemption` | One row per member; one row per transaction | Latest-wins applied here |
-| Target | `member_ind`, `member_usa`, `member_aus`, ..., `member_unassigned` | Current members split by country | Rebuilt from `member_current` |
-| Quarantine | `quarantine` | Rejected rows, original payload, reason code | Nothing is dropped silently |
+| Raw | `RAW.MEMBER_FEED_RAW`, `RAW.REDEMPTION_FEED_RAW` | Every member field as text (a redemption member object as one `VARIANT`/`JSON`) plus load metadata | Append-only, never altered; a file already loaded is skipped |
+| Staging | `STAGING.MEMBER_STG`, `STAGING.REDEMPTION_STG`, view `STAGING.MEMBER_PREPARED_V` | Typed columns, derived `age` and `stale_member`, DQ flags | Typing happens only here |
+| Data quality | `DQ.QUARANTINE`, `DQ.ROW_FINDING`, `DQ.RUN_SUMMARY` | Rejected rows with original values; warnings; failures per rule | Nothing is dropped silently |
+| Conformed | `CORE.MEMBER_CURRENT`, `CORE.MEMBER_COUNTRY_HISTORY`, `CORE.REDEMPTION_TXN` | One row per `member_key`; one row per `txn_id`; every country move | Latest-wins applied here |
+| Mart | `MART.MEMBERS_<ISO3>`, `MART.MEMBERS_UNASSIGNED`, view `MART.MEMBER_REDEMPTION_SUMMARY` | Current members per country; redemption totals per member | Rebuilt from CORE |
+| Reference | `REF.COUNTRY_CODE_MAP` | Raw country spelling -> ISO-3 | Config, not code |
 
-### Raw load metadata
-
-Added to every raw row, none of it taken from the file content:
-
-| Column | Meaning |
-|---|---|
-| `file_name` | Source file |
-| `file_row_number` | 1-based row in the file, excluding the header |
-| `file_ts` | File date/time, from the file name or object metadata (never `now()`) |
-| `batch_id` | Identifier of the load run, shared by all files loaded in it |
-| `loaded_at` | Wall-clock time of the load, for audit only; never used in business logic |
-
-### Staging
-
-- Parses each field from text; a failed parse sets the typed column to NULL and sets a flag, the
-  raw value stays in raw.
-- `age` = whole years between `dob` and `as_of`; NULL if `dob` is NULL.
-- `stale_member` = `last_flight_date` is NULL or older than 90 days before `as_of`. A missing flight
-  date counts as stale, and that choice is written down as an assumption.
-- DQ flags, one boolean per check: `dob_invalid`, `enrollment_date_invalid`, `flight_date_invalid`,
-  `country_unknown`, `tier_unknown`, `id_missing`, `id_short` (warning only).
-- A row is **rejected** (goes to `quarantine`) only for faults that stop it being a member: missing
-  `member_id`, or a header/column-count mismatch. Bad dates and unknown country are **flagged**, and
-  the row still flows on, so a member with a bad date is not lost.
-
-### Quarantine
-
-| Column | Meaning |
-|---|---|
-| `quarantine_id` | Surrogate key |
-| `source_table`, `file_name`, `file_row_number`, `batch_id` | Where the row came from |
-| `reason_code` | e.g. `MISSING_MEMBER_ID`, `HEADER_MISMATCH`, `INVALID_JSON`, `UNMATCHED_MEMBER`, `DUPLICATE_TXN_OLDER` |
-| `reason_detail` | Human-readable text |
-| `raw_payload` | The row exactly as received |
-| `quarantined_at` | Load time (audit only) |
-
-Row counts must reconcile: `raw rows = staged rows + quarantined rows` for every batch, and the
-pipeline fails the batch if they do not.
+Raw load metadata, added to every raw row and never taken from the file content: `file_name`,
+`file_row_number` (the header is line 1), `file_ts` (from the file name, or the manifest, never
+`now()`), `batch_id` (one batch per file), `loaded_at` (audit only, never used in logic).
 
 ## Flowchart
 
 ```mermaid
 flowchart TD
     subgraph Sources
-        A1[Member feed<br/>pipe-delimited]
-        A2[Redemption feed<br/>JSON]
+        A1[Member feed .dat<br/>pipe-delimited]
+        A2[Country extracts<br/>IND.csv USA.csv AUS.xlsx]
+        A3[Redemption feed<br/>JSON]
+        M[(Source manifest<br/>config.py)]
     end
 
-    A1 --> R1[raw_member<br/>all VARCHAR + file_name, file_row_number,<br/>file_ts, batch_id, loaded_at]
-    A2 --> R2[raw_redemption<br/>one VARIANT per member record + metadata]
+    M -.->|source system, country,<br/>date format, file_ts| A2
+    A1 --> R1[RAW.MEMBER_FEED_RAW<br/>all text + load metadata]
+    A2 --> R1
+    A3 --> R2[RAW.REDEMPTION_FEED_RAW<br/>one VARIANT per member object]
 
-    R1 --> S1[stg_member<br/>typed, age, stale_member, DQ flags]
-    R2 --> F[Flatten redemptions array<br/>one row per transaction]
-    F --> S2[stg_redemption<br/>typed, DQ flags]
+    R1 --> V[MEMBER_PREPARED_V<br/>trimmed, blank = NULL]
+    V --> Q{Quality rules DQ001-DQ017<br/>SQL views}
+    Q -->|REJECT| QU[(DQ.QUARANTINE<br/>rule codes + original values)]
+    Q -->|WARN / ROUTE| F[(DQ.ROW_FINDING)]
+    Q -->|accepted| S1[STAGING.MEMBER_STG<br/>typed, age, stale_member, flags]
+    Q --> RS[(DQ.RUN_SUMMARY)]
 
-    S1 -->|rejected rows| Q[(quarantine<br/>reason_code)]
-    S2 -->|rejected rows| Q
+    S1 --> L{Latest wins per member_key<br/>strictly newer by file_ts, file_row_number}
+    L --> MC[CORE.MEMBER_CURRENT]
+    L --> H[CORE.MEMBER_COUNTRY_HISTORY]
+    MC --> T1[MART.MEMBERS_IND]
+    MC --> T2[MART.MEMBERS_USA]
+    MC --> T3[MART.MEMBERS_...]
+    MC --> T4[MART.MEMBERS_UNASSIGNED]
 
-    S1 --> L{Latest wins<br/>per member_id<br/>file_ts, file_row_number}
-    L --> MC[member_current]
-    MC --> H[member_country_history]
-
-    MC --> T1[member_IND]
-    MC --> T2[member_USA]
-    MC --> T3[member_AUS]
-    MC --> T4[member_unassigned]
-
-    S2 --> D{Dedup txn_id<br/>latest status wins}
-    D --> RD[redemption]
-    MC -->|join on member_id| RD
-    RD -->|no matching member| Q
+    R2 --> FL[Flatten: UNNEST / LATERAL FLATTEN<br/>one row per transaction]
+    FL --> RV{Rules RD001-RD006<br/>dedupe by txn_id}
+    RV -->|REJECT| QU
+    RV -->|WARN| F
+    RV --> S2[STAGING.REDEMPTION_STG]
+    S2 --> RT[CORE.REDEMPTION_TXN]
+    RT -->|LEFT JOIN on member_key| SUM[MART.MEMBER_REDEMPTION_SUMMARY<br/>orphans visible]
+    MC --> SUM
 ```
+
+## Pipeline
+
+`python -m skypoints.pipeline --as-of 2024-01-15` (see the README). Per run:
+
+1. Create the schema from `sql/duckdb/` (idempotent).
+2. Classify every file in `data/raw`: the **source manifest** (`src/skypoints/config.py`) first,
+   then the feed name patterns; anything else is listed in the report as `no matching feed rule`.
+3. Members and country extracts, oldest `file_ts` first, **one batch per file**: load to raw ->
+   quality rules and staging -> merge into `member_current` -> country split. Splitting per batch
+   is what records each country move in order.
+4. Redemption feeds: load to raw -> flatten, validate, stage -> promote to `CORE.REDEMPTION_TXN`.
+5. Print the run report (files, rows per layer, rows per country table, DQ summary by rule,
+   quarantined rows) and write the CSV export (`skypoints.export`).
+
+A file rejected whole (a header that does not match, or an invalid name) is reported as failed,
+nothing of it reaches raw, and the exit code is 1.
+
+## Data quality
+
+Rules are SQL views (`sql/duckdb/05_validations.sql`, Snowflake twin `sql/snowflake/05_validations.sql`);
+Python only loads their inputs and reads their findings, so the same logic ports to Snowflake. Config
+(tiers, active values, max age, country map, lengths, date formats per source) is data, not code.
+
+| Severity | What happens |
+|---|---|
+| REJECT | The row goes to `DQ.QUARANTINE` once, with every rule code that rejected it, and stays out of staging |
+| WARN, ROUTE | Recorded in `DQ.ROW_FINDING`; the row is still staged (ROUTE sends it to the unassigned table) |
+| FAIL_FILE | That file only is stopped (header missing a mandatory column, unknown or duplicate column) |
+| FAIL_BATCH | Promotion from staging to CORE is blocked; raw is untouched |
+
+Rules DQ001-DQ003 mandatory fields, DQ004 duplicate key inside a file (last kept), DQ005 length,
+DQ006-DQ009 dates, DQ010 country, DQ011-DQ013 tier / active flag / id length, DQ014 header,
+DQ015-DQ016 reconciliation of raw against staging, DQ017 country resolved through an alias.
+Reconciliation: `raw rows = staged + quarantined` for every batch (DQ015), and no text column may
+lose non-blank values between raw and staging (DQ016), which catches the lost `Agent_Name` of the
+brief's staging example.
+
+`stale_member` is TRUE when the last flight is more than 90 days before `as_of`, FALSE otherwise,
+and NULL (unknown) when there is no flight date or it is after `as_of`. `age` is whole years at
+`as_of`: the month-day comparison is the birthday adjustment (`DATEDIFF('year')` alone counts year
+boundaries and is wrong for a 31 December birthday).
 
 ## "Latest record wins"
 
-1. Take every staged member row from all batches loaded so far (staging is a stable, typed view of
-   raw, so a late-arriving older file cannot overwrite a newer record).
-2. Rank rows per `member_id` by `file_ts DESC, file_row_number DESC` and keep rank 1:
+`merge_member_current` (`sql/duckdb/transform/30-32`, Snowflake `CORE.MERGE_MEMBER_CURRENT`):
 
-   ```sql
-   QUALIFY ROW_NUMBER() OVER (
-       PARTITION BY member_id
-       ORDER BY file_ts DESC, file_row_number DESC
-   ) = 1
-   ```
-
-   (DuckDB supports `QUALIFY` too.)
-3. The result is `member_current`. Ties on both keys cannot happen: `file_row_number` is unique inside
-   a file and two files cannot share `file_ts`; if they do, the load fails on a uniqueness check
-   rather than choosing arbitrarily.
-4. Rows with a NULL `member_id` never reach this step; they are in quarantine.
-
-Because the rule only reads raw/staging and is a pure ranking, re-running the whole pipeline on the
-same files gives the same `member_current`.
+1. Keep one record per `member_key` in the batch:
+   `QUALIFY ROW_NUMBER() OVER (PARTITION BY member_key ORDER BY file_ts DESC, file_row_number DESC) = 1`.
+2. Compare it with the `CORE.MEMBER_CURRENT` row: insert if new; **update only if strictly newer** by
+   `(file_ts, file_row_number)`; ignore if older (a late-arriving old file cannot overwrite a newer
+   record); do nothing if equal (re-running is idempotent).
+3. Two different records with the same `(file_ts, file_row_number)` for one member raise an error
+   and nothing is written; identical ones collapse silently.
+4. A batch with an open FAIL_BATCH finding is refused.
 
 ## Removing a member from the old country table
 
-The country tables are **not** updated by deleting from one and inserting into another. They are
-derived from `member_current`, which has exactly one row per member, so a member can only be in one
-country table at a time.
+The country tables are never edited one by one. They are derived from `CORE.MEMBER_CURRENT`, which has
+exactly one row per member, so a member is in exactly one country table.
 
-- **Local DuckDB:** each country table is rebuilt in a single transaction:
-  `DELETE FROM member_<c>` then `INSERT ... SELECT ... FROM member_current WHERE country = '<c>'`.
-  A member whose country changed is simply absent from the old selection.
-- **Snowflake:** `MERGE` has no `WHEN NOT MATCHED BY SOURCE`, so the delete is driven by a change
-  set. A CTE compares the new `member_current` with the previous one (via a stream on it) and lists
-  `(member_id, old_country, new_country)` where the country differs. In one task run, those members
-  are deleted from the old country table, and `member_current` rows are `MERGE`d (insert/update) into
-  their new country table.
-- **History:** when the change set finds a country change, one row is appended to
-  `member_country_history (member_id, old_country, new_country, effective_file_ts, batch_id)`. The old
-  country table keeps no trace of the member; history is read from this table or raw.
-- **Check:** after each run, `SELECT member_id FROM (all country tables) GROUP BY member_id HAVING
-  COUNT(*) > 1` must return nothing, and the sum of country table row counts must equal
-  `member_current`.
+- **DuckDB:** each `MART.MEMBERS_<ISO3>` is rebuilt (delete and insert) in the same transaction as the
+  merge; tables are created from `REF.COUNTRY_CODE_MAP`, so a new country needs no code change.
+- **Snowflake:** a stream on `CORE.MEMBER_CURRENT` and a task: old images of changed members are deleted
+  from every country table, new images are inserted where they now belong
+  (`sql/snowflake/04_country_split.sql`).
+- **History:** every country change against the previous CORE state adds one row to
+  `CORE.MEMBER_COUNTRY_HISTORY`; a first appearance is not a move; unassigned counts as a value; several
+  moves inside one batch collapse to one.
+- **Check:** every `member_key` in CORE is in exactly one country table, and none holds a key that is
+  not in CORE.
 
-## Redemption flow
+## Redemptions
 
-1. **raw_redemption:** each member record from the JSON loaded as one `VARIANT` (DuckDB: `JSON`) plus
-   the load metadata. If the file is not valid JSON, the whole file goes to quarantine as
-   `INVALID_JSON`.
-2. **Flatten:** `LATERAL FLATTEN(input => payload:redemptions)` in Snowflake, `UNNEST(json_extract(...))`
-   in DuckDB. A member with an empty `redemptions` array produces no transaction rows (and is not an
-   error).
-3. **stg_redemption:** types `txn_date` and `feed_date` (`YYYYMMDD`), `miles_redeemed` (integer),
-   validates `status` against `COMPLETED` / `PENDING` and flags `miles_redeemed <= 0`,
-   `txn_date > feed_date`, and an unknown status. Values keep their raw text alongside.
-4. **Dedup:** the same `txn_id` can arrive again with a new status. Keep the row with the highest
-   `feed_date`, then highest `file_ts`, then `file_row_number`; older versions stay in staging and the
-   dropped ones are recorded in `quarantine` as `DUPLICATE_TXN_OLDER` so they are not lost silently.
-5. **redemption (conformed):** left join to `member_current` on `member_id`.
-   - Match: `member_matched = true`, plus the member's country and tier.
-   - No match: row is kept with `member_matched = false` **and** a row in `quarantine` with
-     `UNMATCHED_MEMBER`, so it can be re-joined once the member shows up. Redemptions are re-joined on
-     every run because `member_matched` is computed from the current `member_current`, not stored at load.
+1. **Raw:** each member object of the JSON is stored whole as `JSON`/`VARIANT` with the load metadata.
+2. **Flatten:** DuckDB `read_json_objects` + `UNNEST`; Snowflake `LATERAL FLATTEN(payload:redemptions)`. One
+   row per transaction, every value as text (a `member_id` of `007890` keeps its zeros). A member with
+   an empty `redemptions` array gives no rows but is recorded (RD001).
+3. **Validate and stage:** RD002 duplicate `txn_id` (newest by feed_date, file_ts, position wins; the older
+   one is quarantined, not lost), RD003 negative miles, RD004 unknown status, RD005 `txn_date` after
+   `feed_date` (flag only), RD006 unreadable required value.
+4. **Promote** to `CORE.REDEMPTION_TXN`, one row per `txn_id`, replaced only by a strictly newer version.
+
+### Joining redemptions back to members
+
+- **Key:** the join is on `member_key` (`SKYPOINTS:<member_id>`), text on both sides. A numeric cast would
+  lose leading zeros, and the bare `member_id` also exists in the IND, USA and AUS extracts as a different
+  person. Redemptions join to the **member feed** ids only.
+- **Where:** to `CORE.MEMBER_CURRENT`, not to the country tables. One join, and the member's current
+  country comes with it; a country mart can expose redemptions through a view over the summary.
+- **Orphans:** `MART.MEMBER_REDEMPTION_SUMMARY` starts from the transactions (`LEFT JOIN`), so a redemption
+  whose member has not arrived shows `member_matched = false` with no name or country. Nothing is dropped.
+  The view is computed on read, so the row resolves itself when the member shows up (late-arriving
+  dimension) without any re-load.
+- **Country at transaction time:** the summary shows the member's country **now**. If the business needs the
+  country when the redemption happened, `CORE.MEMBER_COUNTRY_HISTORY` already has the dated moves; a full
+  history of other attributes would need an SCD Type 2 member dimension (a future extension).
+- **Totals:** `TOTAL_COMPLETED_MILES` and `PENDING_MILES` (0 when none), `TXN_COUNT`, and
+  `LAST_REDEMPTION_DATE` (latest `txn_date` over all statuses).
+- **At scale:** cluster `CORE.REDEMPTION_TXN` by `member_key`, and keep the promotion a `MERGE` on `txn_id`.
 
 ## Snowflake vs local DuckDB
 
-| Concern | Snowflake (production) | DuckDB (local) |
+| Concern | Snowflake (production) | DuckDB (local, tested) |
 |---|---|---|
-| Landing | Internal/external stage + `COPY INTO raw_member` with `FILE_FORMAT` (pipe, all `VARCHAR`), `METADATA$FILENAME`, `METADATA$FILE_ROW_NUMBER`, `METADATA$FILE_LAST_MODIFIED`; Snowpipe/auto-ingest for continuous load | `read_csv(..., all_varchar = true)` / `read_json` from `data/raw` with the metadata columns added in Python |
-| `file_ts` | `METADATA$FILE_LAST_MODIFIED` or a timestamp in the file name | Parsed from the file name or file mtime |
-| Redemptions | `VARIANT` column, `LATERAL FLATTEN` | `JSON` column, `UNNEST` |
-| Incremental processing | Streams on raw tables + Tasks (or Dynamic Tables) so each run only touches new files; staging is incremental, not a full re-scan | Full rebuild each run; fine at sample scale |
-| Latest wins | Incremental `MERGE` into `member_current` keyed on `member_id`, comparing `(file_ts, file_row_number)` so an old file cannot overwrite a newer row | `QUALIFY ROW_NUMBER()` over all staging rows |
-| Country tables | `MERGE` driven by a country-change set (see above); clustering by `member_id`; one table per country is fine for tens of countries, but a single table partitioned by `country` plus per-country secure views is the better design once countries are many | Delete + insert in one transaction |
-| Scale (billions of rows per day) | Multi-cluster warehouse sized per task, files split into 100-250 MB compressed chunks for parallel `COPY`, clustering keys on `member_id` / `file_ts`, `member_current` stays one row per member so its size is bounded by member count not by feed volume | Single process, in-memory |
-| Quarantine | Written by the same SQL; `COPY ... ON_ERROR = CONTINUE` plus `VALIDATE()` capture file-level rejects; table is a clustered append-only table | Same table shape, written from Python |
-| Raw retention | Raw is cheap and immutable; keep it for replay and audit, apply a retention policy and Time Travel for recovery | Files stay in `data/raw` |
-| Orchestration & dates | Task graph passing `as_of` as a parameter; no `CURRENT_DATE()` in transformations | `--as-of` CLI argument |
-| Access control | Role-based access, row access / secure views per country | n/a |
-| Idempotency | Batch tracked by `batch_id` in a control table; a re-run of the same file set deletes and reloads that batch only | Whole database rebuilt |
+| Landing | Stage + `COPY INTO` with `METADATA$FILENAME` / `METADATA$FILE_ROW_NUMBER`; Snowpipe for continuous load | Python loaders insert parsed rows |
+| `file_ts` | A timestamp in the file name (`YYYYMMDD_HHMMSSTT`) or `METADATA$FILE_LAST_MODIFIED` | Parsed from the file name, or fixed in the manifest |
+| Redemptions | `VARIANT`, `LATERAL FLATTEN` | `JSON`, `read_json_objects` + `UNNEST` |
+| Latest wins | `MERGE` keyed on `member_key`, incremental | `UPDATE` + `INSERT` in a transaction (DuckDB 1.1.3 has no `MERGE`) |
+| Country tables | Stream on `MEMBER_CURRENT` + task, only changed members | Rebuilt in the same transaction |
+| Rules | Same views, work tables are transient tables | Same views, in-memory work tables |
+| Idempotency | File name in `LOAD_HISTORY`; `batch_id` per file | A file name already in raw is skipped |
 
-## Open items, with answers from the notes
+See `docs/scaling-in-snowflake.md` for the billions-per-day story.
 
-See `docs/adr/` for the decisions behind this design.
+## Open items and assumptions
 
-- **Post Code (spec has 11 columns, sample header has 10):** the header is checked against the spec and
-  the file fails if it does not match, rather than parsing by position (`docs/data-quality-findings.md`).
-  Still to confirm with the spec owner whether Post Code is really missing.
-- **Country-code mapping:** `PHIL`, `AU` and the other mixed codes map to ISO-3 through the
-  `country_code_map` lookup table (ADR 0006). Unmapped or blank country goes to `members_unassigned`.
-  The contents of the map still need confirming.
-- **Stale_Member:** measured from the `as_of` date passed in, not today's date. The notes do not say
-  what a missing flight date means; this design treats it as stale. To confirm.
-- **`file_ts`:** taken from the file name (ADR 0003); a file with no parseable timestamp is rejected.
+- **Post Code:** the spec lists 11 columns, the sample header has 10. The parser maps columns by header name; a
+  missing optional column is a warning (DQ014), a missing mandatory one fails the file.
+- **Manifest values:** the fixed `file_ts` / `feed_date` of the client extracts in `config.py` are
+  placeholders (2024-01-15) until the real delivery times are known.
+- **Country map and member id length:** the seed map and the "shorter than 6 is suspicious" threshold are
+  assumptions to confirm with the data owner.
+- **IND "Individual or Corporate":** outside the spec, not stored.
+- **Linking** the IND/USA/AUS members to the master member feed is out of scope (ADR 0002).
