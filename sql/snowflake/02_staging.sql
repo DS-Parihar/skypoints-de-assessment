@@ -78,11 +78,42 @@ CREATE TABLE IF NOT EXISTS DQ.QUARANTINE (
     BATCH_ID         VARCHAR,
     REASON_CODE      VARCHAR       NOT NULL,
     REASON_DETAIL    VARCHAR,
+    RULE_CODE        VARCHAR,                  -- every rule code that rejected the row, comma-separated, e.g. 'DQ001,DQ002'
+    SEVERITY         VARCHAR,                  -- 'REJECT' for quarantined rows
     RAW_PAYLOAD      VARIANT,                  -- the row exactly as received
     QUARANTINED_AT   TIMESTAMP_NTZ NOT NULL DEFAULT CURRENT_TIMESTAMP(),   -- audit only
     CONSTRAINT PK_QUARANTINE PRIMARY KEY (QUARANTINE_ID)
 )
 COMMENT = 'Rejected rows with a reason code';
+
+-- -----------------------------------------------------------------------------
+-- DQ.ROW_FINDING : rows that continue (WARN, ROUTE) plus file and batch level findings.
+-- MEMBER_KEY is NULL for file- and batch-level findings.
+-- -----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS DQ.ROW_FINDING (
+    FINDING_ID       NUMBER(38,0)  NOT NULL AUTOINCREMENT,
+    BATCH_ID         VARCHAR       NOT NULL,
+    FILE_NAME        VARCHAR,
+    FILE_ROW_NUMBER  NUMBER(38,0),
+    MEMBER_KEY       VARCHAR,
+    RULE_CODE        VARCHAR       NOT NULL,
+    SEVERITY         VARCHAR       NOT NULL,
+    COLUMN_NAME      VARCHAR,
+    VALUE            VARCHAR,                  -- the offending value as received
+    REASON           VARCHAR       NOT NULL,
+    CREATED_AT       TIMESTAMP_NTZ NOT NULL DEFAULT CURRENT_TIMESTAMP(),   -- audit only
+    CONSTRAINT PK_ROW_FINDING PRIMARY KEY (FINDING_ID)
+)
+COMMENT = 'WARN/ROUTE rows and file/batch findings';
+
+-- One row per rule that fired in a batch.
+CREATE TABLE IF NOT EXISTS DQ.RUN_SUMMARY (
+    BATCH_ID         VARCHAR       NOT NULL,
+    RULE_CODE        VARCHAR       NOT NULL,
+    FAILED_COUNT     NUMBER(38,0)  NOT NULL,
+    CONSTRAINT PK_RUN_SUMMARY PRIMARY KEY (BATCH_ID, RULE_CODE)
+)
+COMMENT = 'Rules that fired per batch';
 
 -- -----------------------------------------------------------------------------
 -- DQ.MEMBER_HEADER_CHECK : compares each |H| row loaded by 01_raw.sql with the

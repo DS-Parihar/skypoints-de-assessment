@@ -76,5 +76,7 @@ SELECT
           OR LENGTH(ACTIVE_MEMBER) > 1 OR LENGTH(SOURCE_SYSTEM) > 20
                                             THEN 'FIELD_TOO_LONG'
     END                                                                 AS REJECT_REASON,
-    FILE_NAME, FILE_ROW_NUMBER, FILE_TS, BATCH_ID, RAW_PAYLOAD
+    FILE_NAME, FILE_ROW_NUMBER, FILE_TS, BATCH_ID, RAW_PAYLOAD,
+    -- cleaned text of the columns that are typed above; the quality rules (05_validations.sql) parse these
+    ENROLLMENT_DATE_TXT, LAST_FLIGHT_DATE_TXT, DATE_OF_BIRTH_TXT, POST_CODE_TXT
 FROM typed;

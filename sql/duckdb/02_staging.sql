@@ -71,9 +71,38 @@ CREATE TABLE IF NOT EXISTS DQ.QUARANTINE (
     BATCH_ID         VARCHAR,
     REASON_CODE      VARCHAR       NOT NULL,
     REASON_DETAIL    VARCHAR,
+    RULE_CODE        VARCHAR,                  -- every rule code that rejected the row, comma-separated, e.g. 'DQ001,DQ002'
+    SEVERITY         VARCHAR,                  -- 'REJECT' for quarantined rows
     RAW_PAYLOAD      JSON,                     -- the row exactly as received
     QUARANTINED_AT   TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- audit only
     PRIMARY KEY (QUARANTINE_ID)
+);
+
+-- Rows that continue (WARN, ROUTE) and file/batch level findings. member_key is NULL for
+-- file- and batch-level findings.
+CREATE SEQUENCE IF NOT EXISTS DQ.ROW_FINDING_SEQ;
+
+CREATE TABLE IF NOT EXISTS DQ.ROW_FINDING (
+    FINDING_ID       BIGINT        NOT NULL DEFAULT nextval('DQ.ROW_FINDING_SEQ'),
+    BATCH_ID         VARCHAR       NOT NULL,
+    FILE_NAME        VARCHAR,
+    FILE_ROW_NUMBER  BIGINT,
+    MEMBER_KEY       VARCHAR,
+    RULE_CODE        VARCHAR       NOT NULL,
+    SEVERITY         VARCHAR       NOT NULL,
+    COLUMN_NAME      VARCHAR,
+    VALUE            VARCHAR,                  -- the offending value as received
+    REASON           VARCHAR       NOT NULL,
+    CREATED_AT       TIMESTAMP     NOT NULL DEFAULT CURRENT_TIMESTAMP,   -- audit only
+    PRIMARY KEY (FINDING_ID)
+);
+
+-- One row per rule that fired in a batch.
+CREATE TABLE IF NOT EXISTS DQ.RUN_SUMMARY (
+    BATCH_ID         VARCHAR       NOT NULL,
+    RULE_CODE        VARCHAR       NOT NULL,
+    FAILED_COUNT     BIGINT        NOT NULL,
+    PRIMARY KEY (BATCH_ID, RULE_CODE)
 );
 
 -- Compares each |H| row loaded by 01_raw.sql with the 11-field spec header, by position.
