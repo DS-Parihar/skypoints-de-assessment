@@ -1,0 +1,2 @@
+# Keep the client files byte-identical: no line-ending conversion, whatever core.autocrlf says.
+data/raw/** -text
